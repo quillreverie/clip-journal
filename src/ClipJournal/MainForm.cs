@@ -25,6 +25,9 @@ public sealed class MainForm : Form
     private readonly Button _btnChangeFile = new();
     private readonly Button _btnClear = new();
     private readonly Button _btnExit = new();
+    private readonly Label _lblBlankEvery = new();
+    private readonly NumericUpDown _numBlankEvery = new();
+    private readonly Label _lblBlankEverySuffix = new();
 
     private bool _listening = true;
     private bool _exiting;
@@ -103,6 +106,30 @@ public sealed class MainForm : Form
         ConfigureButton(_btnClear, "清空…");
         ConfigureButton(_btnExit, "退出");
 
+        _lblBlankEvery.Text = "每";
+        _lblBlankEvery.AutoSize = true;
+        _lblBlankEvery.Margin = new Padding(12, 8, 0, 4);
+        _lblBlankEvery.TextAlign = ContentAlignment.MiddleLeft;
+
+        _numBlankEvery.Minimum = 0;
+        _numBlankEvery.Maximum = 999;
+        _numBlankEvery.Value = Math.Clamp(_settings.BlankLineEvery, 0, 999);
+        _numBlankEvery.Width = 56;
+        _numBlankEvery.Margin = new Padding(4, 6, 0, 4);
+        _numBlankEvery.ValueChanged += (_, _) =>
+        {
+            _settings.BlankLineEvery = (int)_numBlankEvery.Value;
+            _settings.Save();
+            ShowTempMessage(_settings.BlankLineEvery == 0
+                ? "已关闭自动空行"
+                : $"每 {_settings.BlankLineEvery} 条后插入空行");
+        };
+
+        _lblBlankEverySuffix.Text = "条空一行 (0=关)";
+        _lblBlankEverySuffix.AutoSize = true;
+        _lblBlankEverySuffix.Margin = new Padding(4, 8, 8, 4);
+        _lblBlankEverySuffix.TextAlign = ContentAlignment.MiddleLeft;
+
         _btnPause.Click += (_, _) => TogglePause();
         _btnOpenFile.Click += (_, _) => OpenClipsFile();
         _btnOpenFolder.Click += (_, _) => OpenClipsFolder();
@@ -113,6 +140,7 @@ public sealed class MainForm : Form
         panelButtons.Controls.AddRange(new Control[]
         {
             _btnPause, _btnOpenFile, _btnOpenFolder, _btnChangeFile, _btnClear, _btnExit,
+            _lblBlankEvery, _numBlankEvery, _lblBlankEverySuffix,
         });
 
         _listBox.Dock = DockStyle.Fill;
@@ -251,6 +279,13 @@ public sealed class MainForm : Form
         try
         {
             _store.AppendLine(numbered);
+
+            // After every N content lines, insert one blank line in the txt (not numbered).
+            var every = _settings.BlankLineEvery;
+            if (every > 0 && index % every == 0)
+            {
+                _store.AppendBlankLine();
+            }
         }
         catch (Exception ex)
         {
@@ -280,6 +315,10 @@ public sealed class MainForm : Form
         if (wasTruncated)
         {
             ShowTempMessage("内容过长，已截断到 256KB");
+        }
+        else if (_settings.BlankLineEvery > 0 && index % _settings.BlankLineEvery == 0)
+        {
+            ShowTempMessage($"第 {index} 条后已插入空行");
         }
     }
 

@@ -61,6 +61,25 @@ public sealed class ClipStore
         }
     }
 
+    /// <summary>
+    /// Appends an empty line (group separator). Does not count as content for numbering.
+    /// </summary>
+    public void AppendBlankLine()
+    {
+        lock (_lock)
+        {
+            using var stream = new FileStream(
+                _filePath,
+                FileMode.Append,
+                FileAccess.Write,
+                FileShare.Read);
+            using var writer = new StreamWriter(stream, Utf8NoBom);
+            writer.WriteLine();
+            writer.Flush();
+            stream.Flush(true);
+        }
+    }
+
     public IReadOnlyList<string> ReadTailLines(int n)
     {
         if (n <= 0)

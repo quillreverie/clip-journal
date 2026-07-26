@@ -13,6 +13,11 @@ public sealed class AppSettings
 
     public bool PrivacyAccepted { get; set; }
 
+    /// <summary>
+    /// After every N content lines, append one blank line to the txt. 0 = disabled.
+    /// </summary>
+    public int BlankLineEvery { get; set; }
+
     public static string DefaultClipsPath =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
@@ -44,6 +49,11 @@ public sealed class AppSettings
             if (string.IsNullOrWhiteSpace(loaded.ClipsFilePath))
             {
                 loaded.ClipsFilePath = DefaultClipsPath;
+            }
+
+            if (loaded.BlankLineEvery < 0)
+            {
+                loaded.BlankLineEvery = 0;
             }
 
             return loaded;

@@ -87,4 +87,29 @@ public class ClipStoreTests
             }
         }
     }
+
+    [Fact]
+    public void AppendBlankLine_inserts_empty_separator_without_counting()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cj-" + Guid.NewGuid() + ".txt");
+        try
+        {
+            var store = new ClipStore(path);
+            store.AppendLine("1. a");
+            store.AppendLine("2. b");
+            store.AppendBlankLine();
+            store.AppendLine("3. c");
+
+            var normalized = File.ReadAllText(path).Replace("\r\n", "\n");
+            Assert.Contains("2. b\n\n3. c", normalized);
+            Assert.Equal(3, store.CountNonEmptyLines());
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
 }
