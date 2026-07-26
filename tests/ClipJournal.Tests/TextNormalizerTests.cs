@@ -33,4 +33,18 @@ public class TextNormalizerTests
         var r = TextNormalizer.ToSingleLine("  hello  \n");
         Assert.Equal("hello", r);
     }
+
+    [Fact]
+    public void FormatNumberedLine_prefixes_index()
+    {
+        Assert.Equal("3. hello", TextNormalizer.FormatNumberedLine(3, "hello"));
+    }
+
+    [Theory]
+    [InlineData("12. hello", "hello")]
+    [InlineData("1.x", "1.x")]
+    [InlineData("no number", "no number")]
+    [InlineData("7. ", "")]
+    public void StripNumberPrefix_removes_leading_index(string input, string expected)
+        => Assert.Equal(expected, TextNormalizer.StripNumberPrefix(input));
 }

@@ -30,6 +30,7 @@ public sealed class MainForm : Form
     private bool _exiting;
     private string? _lastLine;
     private int _totalCount;
+    private int _nextIndex = 1;
 
     public MainForm()
     {
@@ -177,23 +178,32 @@ public sealed class MainForm : Form
 
     private void LoadHistory()
     {
+        _totalCount = _store.CountNonEmptyLines();
+        _nextIndex = _totalCount + 1;
+
         var lines = _store.ReadTailLines(MaxUiItems);
+        var startIndex = Math.Max(1, _totalCount - lines.Count + 1);
+
         _listBox.BeginUpdate();
         try
         {
             _listBox.Items.Clear();
-            foreach (var line in lines)
+            for (var i = 0; i < lines.Count; i++)
             {
-                _listBox.Items.Add(FormatItem("历史", line));
+                var content = TextNormalizer.StripNumberPrefix(lines[i]);
+                var index = startIndex + i;
+                _listBox.Items.Add(FormatItem(index, "历史", content));
             }
 
             if (_listBox.Items.Count > 0)
             {
                 _listBox.TopIndex = _listBox.Items.Count - 1;
-                _lastLine = lines[^1];
+                _lastLine = TextNormalizer.StripNumberPrefix(lines[^1]);
             }
-
-            _totalCount = lines.Count;
+            else
+            {
+                _lastLine = null;
+            }
         }
         finally
         {
@@ -235,9 +245,12 @@ public sealed class MainForm : Form
             return;
         }
 
+        var index = _nextIndex;
+        var numbered = TextNormalizer.FormatNumberedLine(index, line);
+
         try
         {
-            _store.AppendLine(line);
+            _store.AppendLine(numbered);
         }
         catch (Exception ex)
         {
@@ -252,9 +265,10 @@ public sealed class MainForm : Form
 
         _lastLine = line;
         _totalCount++;
+        _nextIndex++;
 
         var stamp = DateTime.Now.ToString("HH:mm:ss");
-        _listBox.Items.Add(FormatItem(stamp, line));
+        _listBox.Items.Add(FormatItem(index, stamp, line));
         while (_listBox.Items.Count > MaxUiItems)
         {
             _listBox.Items.RemoveAt(0);
@@ -269,10 +283,10 @@ public sealed class MainForm : Form
         }
     }
 
-    private static string FormatItem(string timeLabel, string line)
+    private static string FormatItem(int index, string timeLabel, string line)
     {
         var preview = line.Length <= PreviewChars ? line : line[..PreviewChars] + "…";
-        return $"{timeLabel}  {preview}";
+        return $"{index}.  {timeLabel}  {preview}";
     }
 
     private void TogglePause()
@@ -382,6 +396,7 @@ public sealed class MainForm : Form
             _listBox.Items.Clear();
             _lastLine = null;
             _totalCount = 0;
+            _nextIndex = 1;
             UpdateStatus();
             ShowTempMessage("已清空");
         }
@@ -402,7 +417,7 @@ public sealed class MainForm : Form
     private void UpdateStatus()
     {
         _statusListen.Text = _listening ? "监听中" : "已暂停";
-        _statusCount.Text = $"界面 {_listBox.Items.Count} 条";
+        _statusCount.Text = $"共 {_totalCount} 条";
         _statusPath.Text = _store.FilePath;
         _notifyIcon.Text = _listening ? "ClipJournal - 监听中" : "ClipJournal - 已暂停";
     }

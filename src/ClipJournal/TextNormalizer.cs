@@ -38,4 +38,36 @@ public static class TextNormalizer
 
         return (text[..maxChars], true);
     }
+
+    /// <summary>
+    /// Builds a numbered line for the txt file, e.g. "3. hello".
+    /// </summary>
+    public static string FormatNumberedLine(int index, string content)
+        => $"{index}. {content}";
+
+    /// <summary>
+    /// Strips a leading "N. " prefix if present so dedupe compares raw content.
+    /// Requires a space after the dot (our format is "3. hello").
+    /// </summary>
+    public static string StripNumberPrefix(string line)
+    {
+        if (string.IsNullOrEmpty(line))
+        {
+            return line;
+        }
+
+        var i = 0;
+        while (i < line.Length && char.IsDigit(line[i]))
+        {
+            i++;
+        }
+
+        // Must be digits + ". "
+        if (i == 0 || i + 1 >= line.Length || line[i] != '.' || line[i + 1] != ' ')
+        {
+            return line;
+        }
+
+        return line[(i + 2)..];
+    }
 }

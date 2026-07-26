@@ -118,6 +118,34 @@ public sealed class ClipStore
         }
     }
 
+    /// <summary>
+    /// Counts non-empty lines in the current file (for continuing sequence numbers).
+    /// </summary>
+    public int CountNonEmptyLines()
+    {
+        lock (_lock)
+        {
+            if (!File.Exists(_filePath))
+            {
+                return 0;
+            }
+
+            var count = 0;
+            using var stream = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(stream, Utf8NoBom, detectEncodingFromByteOrderMarks: true);
+            while (!reader.EndOfStream)
+            {
+                var line = reader.ReadLine();
+                if (!string.IsNullOrWhiteSpace(line))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+    }
+
     private static List<string> ReadLastChunkLines(string path, long maxRead)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);

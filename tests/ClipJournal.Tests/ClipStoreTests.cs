@@ -66,4 +66,25 @@ public class ClipStoreTests
             }
         }
     }
+
+    [Fact]
+    public void CountNonEmptyLines_counts_appended_rows()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cj-" + Guid.NewGuid() + ".txt");
+        try
+        {
+            var store = new ClipStore(path);
+            Assert.Equal(0, store.CountNonEmptyLines());
+            store.AppendLine("1. a");
+            store.AppendLine("2. b");
+            Assert.Equal(2, store.CountNonEmptyLines());
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
 }
