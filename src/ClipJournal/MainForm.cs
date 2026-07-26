@@ -274,13 +274,13 @@ public sealed class MainForm : Form
         }
 
         var index = _nextIndex;
-        var numbered = TextNormalizer.FormatNumberedLine(index, line);
 
         try
         {
-            _store.AppendLine(numbered);
+            // txt product: content only (no leading index). UI still shows sequence numbers.
+            _store.AppendLine(line);
 
-            // After every N content lines, insert one blank line in the txt (not numbered).
+            // After every N content lines, insert one blank line in the txt.
             var every = _settings.BlankLineEvery;
             if (every > 0 && index % every == 0)
             {
