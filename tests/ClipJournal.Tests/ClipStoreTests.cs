@@ -75,8 +75,8 @@ public class ClipStoreTests
         {
             var store = new ClipStore(path);
             Assert.Equal(0, store.CountNonEmptyLines());
-            store.AppendLine("1. a");
-            store.AppendLine("2. b");
+            store.AppendLine("a");
+            store.AppendLine("b");
             Assert.Equal(2, store.CountNonEmptyLines());
         }
         finally
@@ -95,14 +95,58 @@ public class ClipStoreTests
         try
         {
             var store = new ClipStore(path);
-            store.AppendLine("1. a");
-            store.AppendLine("2. b");
+            store.AppendLine("a");
+            store.AppendLine("b");
             store.AppendBlankLine();
-            store.AppendLine("3. c");
+            store.AppendLine("c");
 
             var normalized = File.ReadAllText(path).Replace("\r\n", "\n");
-            Assert.Contains("2. b\n\n3. c", normalized);
+            Assert.Contains("b\n\nc", normalized);
             Assert.Equal(3, store.CountNonEmptyLines());
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
+    [Fact]
+    public void AppendLine_with_blank_writes_content_and_separator_together()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cj-" + Guid.NewGuid() + ".txt");
+        try
+        {
+            var store = new ClipStore(path);
+            store.AppendLine("a", alsoBlankLine: false);
+            store.AppendLine("b", alsoBlankLine: true);
+            store.AppendLine("c", alsoBlankLine: false);
+
+            var normalized = File.ReadAllText(path).Replace("\r\n", "\n");
+            Assert.Equal("a\nb\n\nc\n", normalized);
+            Assert.Equal(3, store.CountNonEmptyLines());
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
+    [Fact]
+    public void ReadTailLines_keeps_content_that_looks_numbered()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cj-" + Guid.NewGuid() + ".txt");
+        try
+        {
+            var store = new ClipStore(path);
+            store.AppendLine("12. hello");
+            var tail = store.ReadTailLines(1);
+            Assert.Equal(new[] { "12. hello" }, tail);
         }
         finally
         {

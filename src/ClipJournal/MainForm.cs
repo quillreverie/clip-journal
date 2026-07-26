@@ -31,22 +31,21 @@ public sealed class MainForm : Form
 
     private bool _listening = true;
     private bool _exiting;
+    private bool _handlingClipboard;
     private string? _lastLine;
     private int _totalCount;
     private int _nextIndex = 1;
 
-    public MainForm()
+    public MainForm(AppSettings settings)
     {
-        _settings = AppSettings.Load();
+        _settings = settings;
 
-        Text = "ClipJournal";
+        Text = Localization.AppName;
         Width = 860;
         Height = 560;
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(640, 400);
         Font = new Font("Segoe UI", 9F);
-
-        EnsurePrivacyAccepted();
 
         _store = new ClipStore(_settings.ClipsFilePath);
         EnsureClipsFileExists();
@@ -63,32 +62,6 @@ public sealed class MainForm : Form
         Shown += (_, _) => UpdateStatus();
     }
 
-    private void EnsurePrivacyAccepted()
-    {
-        if (_settings.PrivacyAccepted)
-        {
-            return;
-        }
-
-        var result = MessageBox.Show(
-            this,
-            "ClipJournal 会监听剪贴板中的文字，并把每次复制压成一行后写入本地 txt 文件。\n\n" +
-            "文件默认位置：\n" + _settings.ClipsFilePath + "\n\n" +
-            "请勿在记录密码等敏感信息时使用；可随时暂停监听或清空文件。\n\n是否继续？",
-            "ClipJournal 隐私说明",
-            MessageBoxButtons.OKCancel,
-            MessageBoxIcon.Information);
-
-        if (result != DialogResult.OK)
-        {
-            Environment.Exit(0);
-            return;
-        }
-
-        _settings.PrivacyAccepted = true;
-        _settings.Save();
-    }
-
     private void BuildUi()
     {
         var panelButtons = new FlowLayoutPanel
@@ -99,14 +72,14 @@ public sealed class MainForm : Form
             WrapContents = true,
         };
 
-        ConfigureButton(_btnPause, "暂停");
-        ConfigureButton(_btnOpenFile, "打开 txt");
-        ConfigureButton(_btnOpenFolder, "打开文件夹");
-        ConfigureButton(_btnChangeFile, "更换文件");
-        ConfigureButton(_btnClear, "清空…");
-        ConfigureButton(_btnExit, "退出");
+        ConfigureButton(_btnPause, Localization.Pause);
+        ConfigureButton(_btnOpenFile, Localization.OpenTxt);
+        ConfigureButton(_btnOpenFolder, Localization.OpenFolder);
+        ConfigureButton(_btnChangeFile, Localization.ChangeFile);
+        ConfigureButton(_btnClear, Localization.Clear);
+        ConfigureButton(_btnExit, Localization.Exit);
 
-        _lblBlankEvery.Text = "每";
+        _lblBlankEvery.Text = Localization.BlankEveryPrefix;
         _lblBlankEvery.AutoSize = true;
         _lblBlankEvery.Margin = new Padding(12, 8, 0, 4);
         _lblBlankEvery.TextAlign = ContentAlignment.MiddleLeft;
@@ -119,13 +92,13 @@ public sealed class MainForm : Form
         _numBlankEvery.ValueChanged += (_, _) =>
         {
             _settings.BlankLineEvery = (int)_numBlankEvery.Value;
-            _settings.Save();
+            TrySaveSettings();
             ShowTempMessage(_settings.BlankLineEvery == 0
-                ? "已关闭自动空行"
-                : $"每 {_settings.BlankLineEvery} 条后插入空行");
+                ? Localization.BlankLineDisabled
+                : Localization.BlankLineEnabled(_settings.BlankLineEvery));
         };
 
-        _lblBlankEverySuffix.Text = "条空一行 (0=关)";
+        _lblBlankEverySuffix.Text = Localization.BlankEverySuffix;
         _lblBlankEverySuffix.AutoSize = true;
         _lblBlankEverySuffix.Margin = new Padding(4, 8, 8, 4);
         _lblBlankEverySuffix.TextAlign = ContentAlignment.MiddleLeft;
@@ -188,16 +161,16 @@ public sealed class MainForm : Form
     private void BuildTray()
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add("显示窗口", null, (_, _) => ShowMainWindow());
-        menu.Items.Add("暂停/继续", null, (_, _) => TogglePause());
-        menu.Items.Add("打开 txt", null, (_, _) => OpenClipsFile());
-        menu.Items.Add("打开文件夹", null, (_, _) => OpenClipsFolder());
-        menu.Items.Add("更换文件", null, (_, _) => ChangeClipsFile());
-        menu.Items.Add("清空…", null, (_, _) => ClearAll());
+        menu.Items.Add(Localization.ShowWindow, null, (_, _) => ShowMainWindow());
+        menu.Items.Add(Localization.PauseResume, null, (_, _) => TogglePause());
+        menu.Items.Add(Localization.OpenTxt, null, (_, _) => OpenClipsFile());
+        menu.Items.Add(Localization.OpenFolder, null, (_, _) => OpenClipsFolder());
+        menu.Items.Add(Localization.ChangeFile, null, (_, _) => ChangeClipsFile());
+        menu.Items.Add(Localization.Clear, null, (_, _) => ClearAll());
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("退出", null, (_, _) => ExitApp());
+        menu.Items.Add(Localization.Exit, null, (_, _) => ExitApp());
 
-        _notifyIcon.Text = "ClipJournal";
+        _notifyIcon.Text = Localization.AppName;
         _notifyIcon.Icon = SystemIcons.Application;
         _notifyIcon.Visible = true;
         _notifyIcon.ContextMenuStrip = menu;
@@ -218,15 +191,16 @@ public sealed class MainForm : Form
             _listBox.Items.Clear();
             for (var i = 0; i < lines.Count; i++)
             {
-                var content = TextNormalizer.StripNumberPrefix(lines[i]);
+                // txt stores plain content only; do not strip leading "N. " which may be real content.
+                var content = lines[i];
                 var index = startIndex + i;
-                _listBox.Items.Add(FormatItem(index, "历史", content));
+                _listBox.Items.Add(FormatItem(index, Localization.HistoryLabel, content));
             }
 
             if (_listBox.Items.Count > 0)
             {
                 _listBox.TopIndex = _listBox.Items.Count - 1;
-                _lastLine = TextNormalizer.StripNumberPrefix(lines[^1]);
+                _lastLine = lines[^1];
             }
             else
             {
@@ -241,14 +215,33 @@ public sealed class MainForm : Form
 
     private void OnClipboardUpdate()
     {
-        if (!_listening || _exiting)
+        // Never re-enter from modal loops or nested clipboard messages.
+        if (!_listening || _exiting || _handlingClipboard)
         {
             return;
         }
 
+        _handlingClipboard = true;
+        try
+        {
+            HandleClipboardUpdate();
+        }
+        catch (Exception ex)
+        {
+            // Keep the listener alive; avoid modal dialogs inside WndProc.
+            ShowTempMessage(ex.Message);
+        }
+        finally
+        {
+            _handlingClipboard = false;
+        }
+    }
+
+    private void HandleClipboardUpdate()
+    {
         if (!ClipboardReader.TryReadUnicodeText(out var text, out _))
         {
-            ShowTempMessage("读取剪贴板失败");
+            ShowTempMessage(Localization.ClipboardReadFailed);
             return;
         }
 
@@ -258,43 +251,33 @@ public sealed class MainForm : Form
             return;
         }
 
-        var line = TextNormalizer.ToSingleLine(text);
+        // Flatten + cap length in one pass so huge clipboard payloads do not allocate 2×.
+        var (line, wasTruncated) = TextNormalizer.ToSingleLine(text, MaxLineChars);
         if (TextNormalizer.IsIgnorable(line))
         {
             return;
         }
 
-        var (truncated, wasTruncated) = TextNormalizer.Truncate(line, MaxLineChars);
-        line = truncated;
-
         if (string.Equals(line, _lastLine, StringComparison.Ordinal))
         {
-            ShowTempMessage("与上一条相同，已跳过");
+            ShowTempMessage(Localization.SkippedDuplicate);
             return;
         }
 
         var index = _nextIndex;
+        var every = _settings.BlankLineEvery;
+        var insertBlank = every > 0 && index % every == 0;
 
         try
         {
             // txt product: content only (no leading index). UI still shows sequence numbers.
-            _store.AppendLine(line);
-
-            // After every N content lines, insert one blank line in the txt.
-            var every = _settings.BlankLineEvery;
-            if (every > 0 && index % every == 0)
-            {
-                _store.AppendBlankLine();
-            }
+            // Content + optional blank separator are written in one open/flush.
+            _store.AppendLine(line, insertBlank);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                this,
-                "写入文件失败：\n" + ex.Message,
-                "ClipJournal",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+            // Status bar only — MessageBox inside WM_CLIPBOARDUPDATE can re-enter this path.
+            ShowTempMessage(Localization.WriteFailed + ex.Message);
             return;
         }
 
@@ -314,11 +297,11 @@ public sealed class MainForm : Form
 
         if (wasTruncated)
         {
-            ShowTempMessage("内容过长，已截断到 256KB");
+            ShowTempMessage(Localization.Truncated);
         }
-        else if (_settings.BlankLineEvery > 0 && index % _settings.BlankLineEvery == 0)
+        else if (insertBlank)
         {
-            ShowTempMessage($"第 {index} 条后已插入空行");
+            ShowTempMessage(Localization.BlankInserted(index));
         }
     }
 
@@ -331,9 +314,9 @@ public sealed class MainForm : Form
     private void TogglePause()
     {
         _listening = !_listening;
-        _btnPause.Text = _listening ? "暂停" : "继续";
+        _btnPause.Text = _listening ? Localization.Pause : Localization.Resume;
         UpdateStatus();
-        ShowTempMessage(_listening ? "已继续监听" : "已暂停监听");
+        ShowTempMessage(_listening ? Localization.Resumed : Localization.Paused);
     }
 
     private void ShowMainWindow()
@@ -348,17 +331,27 @@ public sealed class MainForm : Form
         try
         {
             EnsureClipsFileExists();
+            var path = _store.FilePath;
+            if (!IsTxtPath(path))
+            {
+                ShowTempMessage(Localization.OpenOnlyTxt);
+                return;
+            }
+
             Process.Start(new ProcessStartInfo
             {
-                FileName = _store.FilePath,
+                FileName = path,
                 UseShellExecute = true,
             });
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "ClipJournal", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, ex.Message, Localization.AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
+
+    private static bool IsTxtPath(string path)
+        => path.EndsWith(".txt", StringComparison.OrdinalIgnoreCase);
 
     private void OpenClipsFolder()
     {
@@ -368,13 +361,13 @@ public sealed class MainForm : Form
             Process.Start(new ProcessStartInfo
             {
                 FileName = "explorer.exe",
-                Arguments = $"/select,\"{_store.FilePath}\"",
+                Arguments = "/select,\"" + _store.FilePath + "\"",
                 UseShellExecute = true,
             });
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "ClipJournal", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, ex.Message, Localization.AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -382,8 +375,10 @@ public sealed class MainForm : Form
     {
         using var dialog = new SaveFileDialog
         {
-            Title = "选择保存的 txt 文件",
-            Filter = "文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
+            Title = Localization.ChooseFileTitle,
+            Filter = Localization.FilterTxt,
+            DefaultExt = "txt",
+            AddExtension = true,
             FileName = Path.GetFileName(_store.FilePath),
             InitialDirectory = Path.GetDirectoryName(_store.FilePath),
             OverwritePrompt = false,
@@ -396,21 +391,27 @@ public sealed class MainForm : Form
 
         try
         {
-            _store.SetFilePath(dialog.FileName);
+            var chosen = dialog.FileName;
+            if (!IsTxtPath(chosen))
+            {
+                chosen += ".txt";
+            }
+
+            _store.SetFilePath(chosen);
             if (!File.Exists(_store.FilePath))
             {
                 _store.Clear();
             }
 
             _settings.ClipsFilePath = _store.FilePath;
-            _settings.Save();
+            TrySaveSettings();
             LoadHistory();
             UpdateStatus();
-            ShowTempMessage("已切换保存文件");
+            ShowTempMessage(Localization.FileSwitched);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "ClipJournal", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, ex.Message, Localization.AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -418,8 +419,8 @@ public sealed class MainForm : Form
     {
         var result = MessageBox.Show(
             this,
-            "将清空列表，并清空当前 txt 文件中的全部内容。确定吗？",
-            "ClipJournal",
+            Localization.ClearConfirm(_store.FilePath),
+            Localization.AppName,
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning,
             MessageBoxDefaultButton.Button2);
@@ -437,11 +438,11 @@ public sealed class MainForm : Form
             _totalCount = 0;
             _nextIndex = 1;
             UpdateStatus();
-            ShowTempMessage("已清空");
+            ShowTempMessage(Localization.Cleared);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "ClipJournal", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, ex.Message, Localization.AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -453,12 +454,24 @@ public sealed class MainForm : Form
         }
     }
 
+    private void TrySaveSettings()
+    {
+        try
+        {
+            _settings.Save();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, Localization.AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
     private void UpdateStatus()
     {
-        _statusListen.Text = _listening ? "监听中" : "已暂停";
-        _statusCount.Text = $"共 {_totalCount} 条";
+        _statusListen.Text = _listening ? Localization.Listening : Localization.StatusPaused;
+        _statusCount.Text = Localization.TotalCount(_totalCount);
         _statusPath.Text = _store.FilePath;
-        _notifyIcon.Text = _listening ? "ClipJournal - 监听中" : "ClipJournal - 已暂停";
+        _notifyIcon.Text = _listening ? Localization.TrayListening : Localization.TrayPaused;
     }
 
     private void ShowTempMessage(string message)
@@ -479,7 +492,7 @@ public sealed class MainForm : Form
         {
             e.Cancel = true;
             Hide();
-            ShowTempMessage("已隐藏到托盘，仍在监听");
+            ShowTempMessage(Localization.HiddenToTray);
         }
     }
 
@@ -496,9 +509,7 @@ public sealed class MainForm : Form
         }
 
         _notifyIcon.Visible = false;
-        _notifyIcon.Dispose();
-        _messageTimer.Dispose();
-        Application.Exit();
+        Close();
     }
 
     protected override void Dispose(bool disposing)

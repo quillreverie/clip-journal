@@ -15,7 +15,8 @@ public class TextNormalizerTests
     [Fact]
     public void ToSingleLine_replaces_newlines_and_compresses_spaces()
     {
-        var r = TextNormalizer.ToSingleLine("a\r\n\nb\t c");
+        var (r, truncated) = TextNormalizer.ToSingleLine("a\r\n\nb\t c");
+        Assert.False(truncated);
         Assert.Equal("a b c", r);
     }
 
@@ -30,21 +31,35 @@ public class TextNormalizerTests
     [Fact]
     public void ToSingleLine_trims_edges()
     {
-        var r = TextNormalizer.ToSingleLine("  hello  \n");
+        var (r, _) = TextNormalizer.ToSingleLine("  hello  \n");
         Assert.Equal("hello", r);
     }
 
     [Fact]
-    public void FormatNumberedLine_prefixes_index()
+    public void ToSingleLine_preserves_numbered_content()
     {
-        Assert.Equal("3. hello", TextNormalizer.FormatNumberedLine(3, "hello"));
+        // Content that looks like an old numbered line must stay intact.
+        var (r, _) = TextNormalizer.ToSingleLine("12. hello");
+        Assert.Equal("12. hello", r);
     }
 
-    [Theory]
-    [InlineData("12. hello", "hello")]
-    [InlineData("1.x", "1.x")]
-    [InlineData("no number", "no number")]
-    [InlineData("7. ", "")]
-    public void StripNumberPrefix_removes_leading_index(string input, string expected)
-        => Assert.Equal(expected, TextNormalizer.StripNumberPrefix(input));
+    [Fact]
+    public void ToSingleLine_respects_maxChars_without_full_scan_allocation()
+    {
+        var huge = new string('a', 1000) + "\n" + new string('b', 1000);
+        var (r, truncated) = TextNormalizer.ToSingleLine(huge, maxChars: 10);
+        Assert.True(truncated);
+        Assert.Equal(10, r.Length);
+        Assert.Equal(new string('a', 10), r);
+    }
+
+    [Fact]
+    public void Truncate_does_not_split_surrogate_pair()
+    {
+        // 😀 is one rune, two UTF-16 chars.
+        var s = "ab" + "\U0001F600" + "cd";
+        var (t, truncated) = TextNormalizer.Truncate(s, 3);
+        Assert.True(truncated);
+        Assert.Equal("ab", t);
+    }
 }

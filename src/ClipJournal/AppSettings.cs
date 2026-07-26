@@ -50,6 +50,18 @@ public sealed class AppSettings
             {
                 loaded.ClipsFilePath = DefaultClipsPath;
             }
+            else
+            {
+                // Normalize and reject empty/invalid paths defensively.
+                try
+                {
+                    loaded.ClipsFilePath = Path.GetFullPath(loaded.ClipsFilePath);
+                }
+                catch
+                {
+                    loaded.ClipsFilePath = DefaultClipsPath;
+                }
+            }
 
             if (loaded.BlankLineEvery < 0)
             {
@@ -73,6 +85,9 @@ public sealed class AppSettings
         }
 
         var json = JsonSerializer.Serialize(this, JsonOptions);
-        File.WriteAllText(SettingsPath, json);
+        // Atomic-ish write to reduce risk of truncated settings on crash.
+        var temp = SettingsPath + ".tmp";
+        File.WriteAllText(temp, json);
+        File.Move(temp, SettingsPath, overwrite: true);
     }
 }

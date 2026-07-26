@@ -5,16 +5,29 @@ public static class TextNormalizer
     public static bool IsIgnorable(string? text)
         => string.IsNullOrWhiteSpace(text);
 
-    public static string ToSingleLine(string text)
+    /// <summary>
+    /// Flattens whitespace/newlines to single spaces. If <paramref name="maxChars"/> &gt; 0,
+    /// stops once the result reaches that length (avoids allocating for huge clipboard dumps).
+    /// </summary>
+    public static (string text, bool truncated) ToSingleLine(string text, int maxChars = 0)
     {
-        var sb = new System.Text.StringBuilder(text.Length);
+        var capacity = maxChars > 0 ? Math.Min(text.Length, maxChars) : text.Length;
+        var sb = new System.Text.StringBuilder(capacity);
         var prevSpace = false;
+        var truncated = false;
+
         foreach (var ch in text)
         {
             if (ch is '\r' or '\n' or '\t' or ' ')
             {
                 if (!prevSpace && sb.Length > 0)
                 {
+                    if (maxChars > 0 && sb.Length >= maxChars)
+                    {
+                        truncated = true;
+                        break;
+                    }
+
                     sb.Append(' ');
                     prevSpace = true;
                 }
@@ -22,11 +35,24 @@ public static class TextNormalizer
                 continue;
             }
 
+            if (maxChars > 0 && sb.Length >= maxChars)
+            {
+                truncated = true;
+                break;
+            }
+
             sb.Append(ch);
             prevSpace = false;
         }
 
-        return sb.ToString().Trim();
+        var result = sb.ToString().Trim();
+        if (maxChars > 0 && result.Length > maxChars)
+        {
+            result = SafeTruncate(result, maxChars);
+            truncated = true;
+        }
+
+        return (result, truncated);
     }
 
     public static (string text, bool truncated) Truncate(string text, int maxChars)
@@ -36,38 +62,28 @@ public static class TextNormalizer
             return (text, false);
         }
 
-        return (text[..maxChars], true);
+        return (SafeTruncate(text, maxChars), true);
     }
 
-    /// <summary>
-    /// Builds a numbered line for the txt file, e.g. "3. hello".
-    /// </summary>
-    public static string FormatNumberedLine(int index, string content)
-        => $"{index}. {content}";
-
-    /// <summary>
-    /// Strips a leading "N. " prefix if present so dedupe compares raw content.
-    /// Requires a space after the dot (our format is "3. hello").
-    /// </summary>
-    public static string StripNumberPrefix(string line)
+    private static string SafeTruncate(string text, int maxChars)
     {
-        if (string.IsNullOrEmpty(line))
+        if (maxChars <= 0)
         {
-            return line;
+            return string.Empty;
         }
 
-        var i = 0;
-        while (i < line.Length && char.IsDigit(line[i]))
+        if (text.Length <= maxChars)
         {
-            i++;
+            return text;
         }
 
-        // Must be digits + ". "
-        if (i == 0 || i + 1 >= line.Length || line[i] != '.' || line[i + 1] != ' ')
+        // Avoid splitting a UTF-16 surrogate pair.
+        var len = maxChars;
+        if (char.IsHighSurrogate(text[len - 1]) && len < text.Length && char.IsLowSurrogate(text[len]))
         {
-            return line;
+            len--;
         }
 
-        return line[(i + 2)..];
+        return text[..len];
     }
 }

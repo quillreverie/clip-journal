@@ -9,6 +9,13 @@
     <AssemblyName>ClipJournal</AssemblyName>
     <RootNamespace>ClipJournal</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.0.0</Version>
+    <Authors>quillreverie</Authors>
+    <Product>ClipJournal</Product>
+    <Description>Windows clipboard text collector that appends each copy as a single line to a local txt file.</Description>
+    <RepositoryUrl>https://github.com/quillreverie/clip-journal</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/quillreverie/clip-journal</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
 </Project>

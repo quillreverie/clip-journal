@@ -1,7 +1,41 @@
+## Build
 bin/
 obj/
 artifacts/
+[Bb]uild/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio / Rider / VS Code
 .vs/
+.idea/
 *.user
 *.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+.vscode/*
+!.vscode/extensions.json
+
+## NuGet
+*.nupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+## OS / temp
+Thumbs.db
+Desktop.ini
 *.log
+*.tmp
+*.temp
+*~
+
+## Test / coverage
+TestResults/
+coverage*
+*.coverage
+*.coveragexml
+
+## Publish leftovers
+publish/
+out/

@@ -46,25 +46,27 @@ public sealed class ClipStore
     public void AppendLine(string singleLine)
     {
         ArgumentNullException.ThrowIfNull(singleLine);
-
-        lock (_lock)
-        {
-            using var stream = new FileStream(
-                _filePath,
-                FileMode.Append,
-                FileAccess.Write,
-                FileShare.Read);
-            using var writer = new StreamWriter(stream, Utf8NoBom);
-            writer.WriteLine(singleLine);
-            writer.Flush();
-            stream.Flush(true);
-        }
+        AppendCore(singleLine, trailingBlankLine: false);
     }
 
     /// <summary>
     /// Appends an empty line (group separator). Does not count as content for numbering.
     /// </summary>
     public void AppendBlankLine()
+    {
+        AppendCore(contentLine: null, trailingBlankLine: true);
+    }
+
+    /// <summary>
+    /// Appends a content line and optionally one blank separator in a single open/flush.
+    /// </summary>
+    public void AppendLine(string singleLine, bool alsoBlankLine)
+    {
+        ArgumentNullException.ThrowIfNull(singleLine);
+        AppendCore(singleLine, alsoBlankLine);
+    }
+
+    private void AppendCore(string? contentLine, bool trailingBlankLine)
     {
         lock (_lock)
         {
@@ -74,7 +76,16 @@ public sealed class ClipStore
                 FileAccess.Write,
                 FileShare.Read);
             using var writer = new StreamWriter(stream, Utf8NoBom);
-            writer.WriteLine();
+            if (contentLine is not null)
+            {
+                writer.WriteLine(contentLine);
+            }
+
+            if (trailingBlankLine)
+            {
+                writer.WriteLine();
+            }
+
             writer.Flush();
             stream.Flush(true);
         }

@@ -1,52 +1,63 @@
 # ClipJournal
 
-Windows 剪贴板文本收集小工具：每次复制的文字自动压成**一行**，追加到本地 `.txt`。窗口列表实时显示进度，系统托盘常驻。
+English | [简体中文](README.zh-CN.md)
 
-## 需求与行为
+A small Windows tray app that watches the clipboard for text, flattens each copy into **one line**, and appends it to a local `.txt` file. The main window shows live progress; the app stays in the system tray.
 
-- 监听系统剪贴板（文本）
-- 多行内容压成单行（换行/Tab → 空格）
-- 界面列表带递增序号；**txt 成品只写正文**（不写序号）
-- 可设「每 N 条空一行」：在 txt 里分组插入空行（0=关闭）
-- 与上一条完全相同则跳过
-- 图片等非文本忽略
-- 默认写入：`文档\ClipJournal\clips.txt`（可在界面更换）
-- 点窗口关闭只是隐藏到托盘；托盘菜单「退出」才真正结束
+## Behavior
 
-## 运行环境
+- Listens for system clipboard **text** only
+- Collapses multi-line content into a single line (newlines / tabs → spaces)
+- UI list uses sequential numbers; the **txt file stores plain content only** (no numbers)
+- Optional “blank line every N clips” in the txt (0 = off)
+- Skips when the new line is identical to the previous one
+- Ignores images and other non-text clipboard data
+- Default output: `Documents\ClipJournal\clips.txt` (changeable in the UI)
+- Closing the window hides to tray; use tray **Exit** to quit
+
+## Requirements
 
 - Windows 10/11
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)（开发）
-- 运行已发布版本需要 [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) for development
+- [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) for published builds (`--self-contained false`)
 
-## 开发与运行
+## Build & run
 
 ```powershell
-cd D:\code\fast-copy
+git clone https://github.com/quillreverie/clip-journal.git
+cd clip-journal
 dotnet test
 dotnet run --project src\ClipJournal
 ```
 
-发布：
+Publish:
 
 ```powershell
 dotnet publish src\ClipJournal\ClipJournal.csproj -c Release -r win-x64 --self-contained false -o artifacts\ClipJournal
 ```
 
-运行 `artifacts\ClipJournal\ClipJournal.exe`。
+Then run `artifacts\ClipJournal\ClipJournal.exe`.
 
-## 隐私说明
+## UI
 
-本程序会把你复制的文字以**明文**写入本地 txt。请勿在复制密码、验证码、密钥时保持监听；可使用「暂停」或「清空」。
-
-## 界面操作
-
-| 操作 | 说明 |
+| Action | Description |
 |---|---|
-| 暂停 / 继续 | 临时停止或恢复收集 |
-| 打开 txt | 用默认程序打开当前文件 |
-| 打开文件夹 | 在资源管理器中定位文件 |
-| 更换文件 | 选择新的保存路径（旧文件保留） |
-| 清空 | 清空列表并清空当前 txt |
-| 每 N 条空一行 | 写入第 N、2N、3N… 条后，在 txt 多插一个空行；填 0 关闭 |
-| 退出 | 停止监听并退出程序 |
+| Pause / Resume | Temporarily stop or resume collection |
+| Open txt | Open the current file with the default app |
+| Open folder | Reveal the file in Explorer |
+| Change file | Pick a new save path (old file is kept) |
+| Clear | Clear the list and empty the current txt |
+| Blank line every N | After clips N, 2N, 3N… insert a blank line in the txt; 0 disables |
+| Exit | Stop listening and quit |
+
+## Language
+
+UI language follows the Windows display language: **Chinese** when the OS UI culture is `zh*`, otherwise **English**.
+
+## Privacy
+
+Copied text is written **in plain text** to a local file. Pause or clear before copying passwords, codes, or secrets.
+
+## License
+
+[MIT](LICENSE)
