@@ -8,6 +8,10 @@ public sealed class ModernNumberStepper : Control
 {
     private int _value;
     private int _hoveredPart;
+    // Fractional wheel accumulator: precision touchpads and smooth-scroll mice emit
+    // many small-delta events per gesture; without accumulation a single swipe would
+    // fire Value++ dozens of times and blow past the intended step size.
+    private float _wheelCarry;
 
     public event EventHandler<int>? ValueChanged;
 
@@ -106,7 +110,17 @@ public sealed class ModernNumberStepper : Control
         // Intentionally do NOT call base.OnMouseWheel: that routes the event up to
         // the parent ScrollableControl and would scroll the card list while we also
         // step the value, producing a confusing double action.
-        Value += Math.Sign(e.Delta);
+        // Accumulate sub-integer wheel motion, stepping one notch per full notch of
+        // travel. Math.Sign alone would over-step on high-resolution scroll devices.
+        _wheelCarry += (float)e.Delta / SystemInformation.MouseWheelScrollDelta;
+        var steps = (int)_wheelCarry;
+        if (steps == 0)
+        {
+            return;
+        }
+
+        _wheelCarry -= steps;
+        Value += Math.Sign(steps);
     }
 
     protected override bool IsInputKey(Keys keyData)

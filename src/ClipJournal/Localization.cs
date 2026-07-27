@@ -98,14 +98,28 @@ public static class Localization
         ? "无法启动剪贴板监听，可能是另一个程序正在独占剪贴板。"
         : "Could not start clipboard listening; another app may be locking the clipboard.";
     public static string SkippedDuplicate => IsChinese ? "与上一条相同，已跳过" : "Same as the previous clip, so it was skipped";
-    public static string WriteFailed => IsChinese ? "写入文件失败：\n" : "Failed to write file:\n";
+    public static string Truncated => IsChinese ? "内容过长，已截断到 256KB" : "The clip was truncated to 256KB";
     public static string WriteFailedHint => IsChinese
         ? "写入文件失败：可能被其他程序占用或权限不足。可在「保存与格式」中更换保存文件。"
         : "Failed to write the file: it may be open in another program or you lack access. Try a different save file in \"Save & format\".";
     public static string UnexpectedError => IsChinese
         ? "捕获过程出现意外错误，已跳过本次复制。"
         : "An unexpected error occurred during capture; this clip was skipped.";
-    public static string Truncated => IsChinese ? "内容过长，已截断到 256KB" : "The clip was truncated to 256KB";
+    public static string CopyFailedHint => IsChinese
+        ? "复制到剪贴板失败：可能被其他程序占用，稍后再试。"
+        : "Could not copy to the clipboard; it may be held by another app. Try again shortly.";
+    public static string OpenFileFailedHint => IsChinese
+        ? "无法打开该文件或所在位置，请确认文件仍然存在且未被移动。"
+        : "Could not open the file or its folder. Make sure it still exists and hasn't been moved.";
+    public static string ChangeFileFailedHint => IsChinese
+        ? "无法切换到该保存文件：路径无效、不可写或被占用。"
+        : "Could not switch to that save file: the path is invalid, not writable, or in use.";
+    public static string ClearFailedHint => IsChinese
+        ? "无法清空记录：文件可能正在被其他程序占用。"
+        : "Could not clear the journal; the file may be open in another program.";
+    public static string SaveSettingsFailedHint => IsChinese
+        ? "无法保存设置：请检查磁盘空间或对该位置的写入权限。"
+        : "Could not save settings; check free disk space and write access to that location.";
     public static string BlankInserted(int index) => IsChinese
         ? $"已在第 {index} 条后插入空行"
         : $"Blank line inserted after clip {index}";
@@ -129,8 +143,8 @@ public static class Localization
         : "This permanently clears every clip from the journal and empties this text file:\n\n" + path + "\n\nContinue?";
     public static string OpenOnlyTxt => IsChinese ? "这里只能打开 .txt 文件" : "Only .txt files can be opened here";
 
-    public static string SettingsCorruptWarning(string _)
+    public static string SettingsCorruptWarning
         => IsChinese
-            ? "settings.json 已损坏，已恢复为默认设置。原文件已备份为 settings.json.broken。"
-            : "settings.json was unreadable and has been reset to defaults. The original was backed up as settings.json.broken.";
+            ? "settings.json 已损坏，已恢复为默认设置。原文件已尝试备份为 settings.json.broken。"
+            : "settings.json was unreadable and has been reset to defaults. The original was attempted to be backed up as settings.json.broken.";
 }

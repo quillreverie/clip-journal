@@ -91,7 +91,7 @@ public sealed class AppSettings
 
             return loaded;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             // Preserve the broken file so the user can recover it, then fall back
             // to defaults. Without a backup the original settings are lost forever.
@@ -107,7 +107,7 @@ public sealed class AppSettings
                 // Best-effort backup; if it fails we still reset to defaults.
             }
 
-            warning = Localization.SettingsCorruptWarning(ex.Message);
+            warning = Localization.SettingsCorruptWarning;
             return new AppSettings();
         }
     }

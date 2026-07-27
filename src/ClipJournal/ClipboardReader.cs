@@ -58,7 +58,6 @@ public static class ClipboardReader
 
                 try
                 {
-                    var seqAfter = GetClipboardSequenceNumber();
                     // Bind the read length to the global memory's actual size. The clipboard
                     // data is supposed to be NUL-terminated, but a buggy or hostile producer
                     // can omit it; an unbounded PtrToStringUni would then scan past the
@@ -68,20 +67,23 @@ public static class ClipboardReader
                     var value = charCount > 0
                         ? Marshal.PtrToStringUni(pointer, charCount)!
                         : string.Empty;
-                    if (value.Length > 0 && value[^1] == '\0')
-                    {
-                        // Strip the explicit NUL terminator; keep any text after if present.
-                        var firstNul = value.IndexOf('\0');
-                        if (firstNul >= 0)
-                        {
-                            value = value[..firstNul];
-                        }
-                    }
 
+                    // Sample the sequence number *after* the memory copy so the consistency
+                    // check covers the read itself, not just the window before it.
+                    var seqAfter = GetClipboardSequenceNumber();
                     if (seqBefore != seqAfter)
                     {
                         // Clipboard changed while we were reading.
                         continue;
+                    }
+
+                    // CF_UNICODETEXT is a NUL-terminated C string: cut at the first NUL.
+                    // GlobalSize may report a block larger than the text (trailing padding),
+                    // so we cannot trust charCount as the real content length.
+                    var firstNul = value.IndexOf('\0');
+                    if (firstNul >= 0)
+                    {
+                        value = value[..firstNul];
                     }
 
                     sequence = seqAfter;

@@ -451,10 +451,10 @@ public sealed class MainForm : Form
             Clipboard.SetText(e.Item.Content);
             ShowToast(Localization.CopySuccess);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             _suppressedClipboardText = null;
-            ShowToast(ex.Message, isError: true);
+            ShowToast(Localization.CopyFailedHint, isError: true);
         }
     }
 
@@ -529,9 +529,9 @@ public sealed class MainForm : Form
                 UseShellExecute = true,
             });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ModernDialog.ShowError(this, ex.Message);
+            ModernDialog.ShowError(this, Localization.OpenFileFailedHint);
         }
     }
 
@@ -550,9 +550,9 @@ public sealed class MainForm : Form
                 UseShellExecute = true,
             });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ModernDialog.ShowError(this, ex.Message);
+            ModernDialog.ShowError(this, Localization.OpenFileFailedHint);
         }
     }
 
@@ -619,9 +619,9 @@ public sealed class MainForm : Form
             LoadHistory();
             ShowToast(Localization.FileSwitched);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ModernDialog.ShowError(this, ex.Message);
+            ModernDialog.ShowError(this, Localization.ChangeFileFailedHint);
         }
     }
 
@@ -643,9 +643,9 @@ public sealed class MainForm : Form
             UpdateStatusUI();
             ShowToast(Localization.Cleared);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ModernDialog.ShowError(this, ex.Message);
+            ModernDialog.ShowError(this, Localization.ClearFailedHint);
         }
     }
 
@@ -707,9 +707,9 @@ public sealed class MainForm : Form
         {
             _settings.Save();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ModernDialog.ShowError(this, ex.Message);
+            ModernDialog.ShowError(this, Localization.SaveSettingsFailedHint);
         }
     }
 
