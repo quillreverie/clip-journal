@@ -52,6 +52,17 @@ public static class TextNormalizer
             truncated = true;
         }
 
+        // The append/stop logic above can leave a lone high surrogate at the tail: when
+        // an emoji spans the maxChars boundary, the high surrogate is appended (filling the
+        // quota exactly) and the matching low surrogate is dropped by the early break.
+        // Trim/safe-truncate do not catch this (the lone surrogate is neither whitespace nor
+        // past the limit). A trailing high surrogate would later encode to a UTF-8
+        // replacement byte in the persisted file, corrupting the line. Drop it.
+        if (result.Length > 0 && char.IsHighSurrogate(result[^1]))
+        {
+            result = result[..^1];
+        }
+
         return (result, truncated);
     }
 

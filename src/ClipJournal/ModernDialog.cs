@@ -77,6 +77,13 @@ internal sealed class ModernDialog : Form
             _footer.Controls.Add(_secondaryButton);
             CancelButton = _secondaryButton;
         }
+        else
+        {
+            // No secondary button (error/info dialogs): the only way out is the primary
+            // "Got it". Bind Esc to it too so the dialog is keyboard-dismissable without
+            // forcing a mouse click — AcceptButton only handles Enter.
+            CancelButton = _primaryButton;
+        }
 
         AcceptButton = _primaryButton;
         _footer.Controls.Add(_primaryButton);
