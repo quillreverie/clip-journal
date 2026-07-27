@@ -90,6 +90,12 @@ public sealed class MainForm : Form
         }
         catch
         {
+            // Listening could not start (another app is locking AddClipboardFormatListener,
+            // or handle creation failed). Without this the status badge would still pulse
+            // "capturing" green while no clipboard events ever arrive — a silent failure
+            // the user cannot distinguish from normal operation. Flip to the paused state
+            // so the UI truthfully reports that nothing is being captured.
+            _listening = false;
             ModernDialog.ShowError(this, Localization.ClipboardListenFailed);
         }
 
@@ -393,15 +399,19 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (_suppressedClipboardText is not null)
+        // Suppress the clipboard echo produced by our own SetText (OnItemCopyClicked). The
+        // echo can fire more than once for a single user action: double-clicking the copy
+        // button issues two SetText calls, and some clipboard chains emit two updates per
+        // SetText. The old code cleared _suppressedClipboardText after the first match, so
+        // the second echo was then recorded as a brand-new clip (and silently written to
+        // file) whenever the copied item wasn't the most recent capture. Keep the gate
+        // armed for the whole 2s window and suppress *every* echo whose content matches the
+        // item we copied; a non-matching clip falls through to normal capture unchanged.
+        if (_suppressedClipboardText is not null &&
+            DateTime.UtcNow <= _suppressedClipboardUntilUtc &&
+            string.Equals(line, _suppressedClipboardText, StringComparison.Ordinal))
         {
-            var shouldSuppress = DateTime.UtcNow <= _suppressedClipboardUntilUtc &&
-                                 string.Equals(line, _suppressedClipboardText, StringComparison.Ordinal);
-            _suppressedClipboardText = null;
-            if (shouldSuppress)
-            {
-                return;
-            }
+            return;
         }
 
         if (string.Equals(line, _lastLine, StringComparison.Ordinal))
