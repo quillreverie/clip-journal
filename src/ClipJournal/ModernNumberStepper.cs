@@ -120,7 +120,10 @@ public sealed class ModernNumberStepper : Control
         }
 
         _wheelCarry -= steps;
-        Value += Math.Sign(steps);
+        // Apply the full number of notches: high-resolution scroll devices can batch
+        // several notches into one WM_MOUSEWHEEL, and dropping them to +-1 would
+        // under-count a single fast spin. Clamp in the setter guards the bounds.
+        Value += steps;
     }
 
     protected override bool IsInputKey(Keys keyData)

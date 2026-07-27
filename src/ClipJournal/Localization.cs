@@ -47,9 +47,6 @@ public static class Localization
         : "Flattened into one line, with the newest clips at the bottom";
     public static string PreviewScope => IsChinese ? "显示最近 500 条预览" : "Showing the latest 500 previews";
     public static string CountSummary(int total) => IsChinese ? $"{total} 条记录" : $"{total} clips";
-    public static string FilteredCountSummary(int filtered, int total) => IsChinese
-        ? $"找到 {filtered} 条 · 共 {total} 条"
-        : $"{filtered} found · {total} total";
     public static string FilteredPreviewSummary(int filtered) => IsChinese
         ? $"当前预览中找到 {filtered} 条"
         : $"{filtered} found in this preview";
