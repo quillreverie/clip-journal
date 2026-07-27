@@ -99,6 +99,12 @@ public static class Localization
         : "Could not start clipboard listening; another app may be locking the clipboard.";
     public static string SkippedDuplicate => IsChinese ? "与上一条相同，已跳过" : "Same as the previous clip, so it was skipped";
     public static string WriteFailed => IsChinese ? "写入文件失败：\n" : "Failed to write file:\n";
+    public static string WriteFailedHint => IsChinese
+        ? "写入文件失败：可能被其他程序占用或权限不足。可在「保存与格式」中更换保存文件。"
+        : "Failed to write the file: it may be open in another program or you lack access. Try a different save file in \"Save & format\".";
+    public static string UnexpectedError => IsChinese
+        ? "捕获过程出现意外错误，已跳过本次复制。"
+        : "An unexpected error occurred during capture; this clip was skipped.";
     public static string Truncated => IsChinese ? "内容过长，已截断到 256KB" : "The clip was truncated to 256KB";
     public static string BlankInserted(int index) => IsChinese
         ? $"已在第 {index} 条后插入空行"
@@ -122,4 +128,9 @@ public static class Localization
         ? "这会清空界面中的全部记录，并永久清空以下 txt 文件：\n\n" + path + "\n\n确定继续吗？"
         : "This permanently clears every clip from the journal and empties this text file:\n\n" + path + "\n\nContinue?";
     public static string OpenOnlyTxt => IsChinese ? "这里只能打开 .txt 文件" : "Only .txt files can be opened here";
+
+    public static string SettingsCorruptWarning(string _)
+        => IsChinese
+            ? "settings.json 已损坏，已恢复为默认设置。原文件已备份为 settings.json.broken。"
+            : "settings.json was unreadable and has been reset to defaults. The original was backed up as settings.json.broken.";
 }

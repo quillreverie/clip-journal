@@ -43,11 +43,13 @@ public sealed class MainForm : Form
     private int _nextIndex = 1;
     private string? _suppressedClipboardText;
     private DateTime _suppressedClipboardUntilUtc;
+    private readonly string? _startupWarning;
 
-    public MainForm(AppSettings settings)
+    public MainForm(AppSettings settings, string? startupWarning = null)
     {
         _settings = settings;
         _store = CreateStoreSafely(_settings.ClipsFilePath);
+        _startupWarning = startupWarning;
 
         Text = Localization.AppName;
         Icon = _appIcon;
@@ -96,6 +98,10 @@ public sealed class MainForm : Form
             UpdateStatusUI();
             _toastOverlay.UpdatePosition();
             _cardList.Focus();
+            if (_startupWarning is not null && !IsDisposed)
+            {
+                ShowToast(_startupWarning, isError: true);
+            }
         };
         KeyDown += OnMainKeyDown;
     }
@@ -335,11 +341,13 @@ public sealed class MainForm : Form
         {
             HandleClipboardUpdate();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
+            // Avoid surfacing raw ex.Message here: it can leak local file paths
+            // and system-language text. Use a stable localized message instead.
             if (!IsDisposed)
             {
-                ShowToast(ex.Message, isError: true);
+                ShowToast(Localization.UnexpectedError, isError: true);
             }
         }
         finally
@@ -402,11 +410,11 @@ public sealed class MainForm : Form
         {
             _store.AppendLine(line, insertBlank);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             if (!IsDisposed)
             {
-                ShowToast(Localization.WriteFailed + ex.Message, isError: true);
+                ShowToast(Localization.WriteFailedHint, isError: true);
             }
 
             return;

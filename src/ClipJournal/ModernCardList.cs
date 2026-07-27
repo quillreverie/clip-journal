@@ -40,6 +40,9 @@ public sealed class ModernCardList : Control
     private ClipCardItem? _selectedItem;
     private ClipCardItem? _newItem;
     private float _newItemProgress;
+    // Fractional scroll accumulator: precision touchpads emit sub-120 wheel deltas
+    // and integer division (-Delta / ScrollDelta) silently floors them to zero.
+    private float _scrollCarry;
 
     public event EventHandler<ItemActionEventArgs>? ItemCopyClicked;
     public event EventHandler? SelectionChanged;
@@ -228,7 +231,13 @@ public sealed class ModernCardList : Control
             return;
         }
 
-        var steps = -e.Delta / SystemInformation.MouseWheelScrollDelta;
+        var steps = (int)(_scrollCarry += (float)-e.Delta / SystemInformation.MouseWheelScrollDelta);
+        if (steps == 0)
+        {
+            return;
+        }
+
+        _scrollCarry -= steps;
         var delta = steps * Theme.Scale(this, 48);
         _scrollBar.Value = Math.Clamp(_scrollBar.Value + delta, 0, MaximumScrollValue);
         ResetHover();
@@ -449,34 +458,44 @@ public sealed class ModernCardList : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         var graphics = e.Graphics;
-        graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-
-        using (var background = new SolidBrush(Theme.Background))
+        try
         {
-            graphics.FillRectangle(background, ClientRectangle);
-        }
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
-        if (_filteredItems.Count == 0)
-        {
-            RenderEmptyState(graphics);
-            return;
-        }
-
-        for (var index = 0; index < _filteredItems.Count; index++)
-        {
-            var itemRect = GetItemRectangle(index);
-            if (itemRect.Bottom < 0)
+            using (var background = new SolidBrush(Theme.Background))
             {
-                continue;
+                graphics.FillRectangle(background, ClientRectangle);
             }
 
-            if (itemRect.Top > Height)
+            if (_filteredItems.Count == 0)
             {
-                break;
+                RenderEmptyState(graphics);
+                return;
             }
 
-            RenderItem(graphics, itemRect, _filteredItems[index], index);
+            for (var index = 0; index < _filteredItems.Count; index++)
+            {
+                var itemRect = GetItemRectangle(index);
+                if (itemRect.Bottom < 0)
+                {
+                    continue;
+                }
+
+                if (itemRect.Top > Height)
+                {
+                    break;
+                }
+
+                RenderItem(graphics, itemRect, _filteredItems[index], index);
+            }
+        }
+        catch
+        {
+            // A transient GDI+ failure (corrupt font cache, OOM mid-paint) could leave
+            // the card area half-drawn. Fall back to a solid background so the control
+            // stays legible until the next invalidation rather than showing stale pixels.
+            graphics.Clear(Theme.Background);
         }
     }
 

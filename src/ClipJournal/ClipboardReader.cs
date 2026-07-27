@@ -58,8 +58,26 @@ public static class ClipboardReader
 
                 try
                 {
-                    var value = Marshal.PtrToStringUni(pointer);
                     var seqAfter = GetClipboardSequenceNumber();
+                    // Bind the read length to the global memory's actual size. The clipboard
+                    // data is supposed to be NUL-terminated, but a buggy or hostile producer
+                    // can omit it; an unbounded PtrToStringUni would then scan past the
+                    // allocation into garbage or fault. Char count = byte size / 2.
+                    var sizeBytes = GlobalSize(handle);
+                    var charCount = sizeBytes <= 0 ? 0 : (int)(sizeBytes / 2);
+                    var value = charCount > 0
+                        ? Marshal.PtrToStringUni(pointer, charCount)!
+                        : string.Empty;
+                    if (value.Length > 0 && value[^1] == '\0')
+                    {
+                        // Strip the explicit NUL terminator; keep any text after if present.
+                        var firstNul = value.IndexOf('\0');
+                        if (firstNul >= 0)
+                        {
+                            value = value[..firstNul];
+                        }
+                    }
+
                     if (seqBefore != seqAfter)
                     {
                         // Clipboard changed while we were reading.
@@ -104,4 +122,7 @@ public static class ClipboardReader
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GlobalUnlock(IntPtr hMem);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalSize(IntPtr hMem);
 }

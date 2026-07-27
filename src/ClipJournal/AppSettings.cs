@@ -9,6 +9,10 @@ public sealed class AppSettings
         WriteIndented = true,
     };
 
+    /// <summary>Bytes written/read with the same encoder so hand-edited files
+    /// (e.g. notepad saving with BOM) don't drift across saves.</summary>
+    private static readonly System.Text.Encoding Utf8NoBom = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
     public string ClipsFilePath { get; set; } = DefaultClipsPath;
 
     public bool PrivacyAccepted { get; set; }
@@ -34,8 +38,17 @@ public sealed class AppSettings
             "ClipJournal",
             "settings.json");
 
-    public static AppSettings Load()
+    public static AppSettings Load() => Load(out _);
+
+    /// <summary>
+    /// Loads settings. When the file exists but cannot be parsed (corrupt JSON),
+    /// <paramref name="warning"/> receives a localized message the caller can show
+    /// once so the user knows their settings were reset to defaults instead of
+    /// silently disappearing.
+    /// </summary>
+    public static AppSettings Load(out string? warning)
     {
+        warning = null;
         try
         {
             if (!File.Exists(SettingsPath))
@@ -43,7 +56,7 @@ public sealed class AppSettings
                 return new AppSettings();
             }
 
-            var json = File.ReadAllText(SettingsPath);
+            var json = File.ReadAllText(SettingsPath, Utf8NoBom);
             var loaded = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions);
             if (loaded is null)
             {
@@ -78,8 +91,23 @@ public sealed class AppSettings
 
             return loaded;
         }
-        catch
+        catch (Exception ex)
         {
+            // Preserve the broken file so the user can recover it, then fall back
+            // to defaults. Without a backup the original settings are lost forever.
+            try
+            {
+                if (File.Exists(SettingsPath))
+                {
+                    File.Move(SettingsPath, SettingsPath + ".broken", overwrite: true);
+                }
+            }
+            catch
+            {
+                // Best-effort backup; if it fails we still reset to defaults.
+            }
+
+            warning = Localization.SettingsCorruptWarning(ex.Message);
             return new AppSettings();
         }
     }
@@ -95,9 +123,9 @@ public sealed class AppSettings
         var json = JsonSerializer.Serialize(this, JsonOptions);
         // Atomic-ish write to reduce risk of truncated settings on crash.
         var temp = SettingsPath + ".tmp";
-        File.WriteAllText(temp, json);
         try
         {
+            File.WriteAllText(temp, json, Utf8NoBom);
             File.Move(temp, SettingsPath, overwrite: true);
         }
         catch

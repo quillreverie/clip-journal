@@ -23,13 +23,13 @@ internal static class Program
             return;
         }
 
-        var settings = AppSettings.Load();
+        var settings = AppSettings.Load(out var settingsWarning);
         if (!EnsurePrivacyAccepted(settings))
         {
             return;
         }
 
-        Application.Run(new MainForm(settings));
+        Application.Run(new MainForm(settings, settingsWarning));
     }
 
     private static bool EnsurePrivacyAccepted(AppSettings settings)
