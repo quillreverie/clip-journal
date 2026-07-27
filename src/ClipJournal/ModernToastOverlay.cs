@@ -172,7 +172,11 @@ public sealed class ModernToastOverlay : Control
             graphics.FillRoundedRectangle(fill, rect, Theme.Scale(this, 12));
         }
 
-        using (var border = new Pen(_isError ? Color.FromArgb(238, 191, 197) : Theme.Border, Math.Max(1f, DeviceDpi / 96f)))
+        // Error border derives from the theme's danger palette so a future dark mode
+        // (or any theme tweak) does not leave this one toast border stranded on a
+        // hard-coded plum that clashes with the rest of the error styling.
+        var errorBorder = Theme.Interpolate(Theme.DangerSoft, Theme.Danger, .35f);
+        using (var border = new Pen(_isError ? errorBorder : Theme.Border, Math.Max(1f, DeviceDpi / 96f)))
         {
             graphics.DrawRoundedRectangle(border, rect, Theme.Scale(this, 12));
         }

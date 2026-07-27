@@ -33,6 +33,7 @@ public sealed class MainForm : Form
     private readonly ModernButton _clearButton = new();
     private readonly ModernCardList _cardList = new();
     private readonly ModernToastOverlay _toastOverlay = new();
+    private readonly System.Windows.Forms.Timer _searchDebounce = new();
 
     private bool _listening = true;
     private bool _exiting;
@@ -198,8 +199,12 @@ public sealed class MainForm : Form
 
         _searchBar.SearchTextChanged += (_, _) =>
         {
-            _cardList.SetFilter(_searchBar.SearchText);
-            UpdateRecordSummary();
+            // Debounce the list re-scan: each keystroke would otherwise walk every
+            // item (up to 500 x 256KB) with Contains(OrdinalIgnoreCase). Long clips
+            // + a fast typist made the header visibly stutter. Restart the timer so
+            // only the final (settled) query is applied.
+            _searchDebounce.Stop();
+            _searchDebounce.Start();
         };
 
         _clearButton.Text = Localization.ClearRecords;
@@ -223,6 +228,14 @@ public sealed class MainForm : Form
         _contentPanel.Controls.Add(_contentHeader);
         _contentPanel.Controls.Add(_toastOverlay);
         _toastOverlay.BringToFront();
+
+        _searchDebounce.Interval = 180;
+        _searchDebounce.Tick += (_, _) =>
+        {
+            _searchDebounce.Stop();
+            _cardList.SetFilter(_searchBar.SearchText);
+            UpdateRecordSummary();
+        };
     }
 
     private static void ConfigureLabel(Label label, string text, Font font, Color color)
@@ -543,10 +556,15 @@ public sealed class MainForm : Form
         try
         {
             EnsureClipsFileExists();
+            // Build the /select argument without raw concatenation: a path that contains
+            // a double-quote (a user can type one in SaveFileDialog) would otherwise
+            // break explorer's quoting and point /select at the wrong target. Strip
+            // quotes defensively and re-quote the path as a single argument.
+            var safePath = _store.FilePath.Replace("\"", string.Empty);
             Process.Start(new ProcessStartInfo
             {
                 FileName = "explorer.exe",
-                Arguments = "/select,\"" + _store.FilePath + "\"",
+                Arguments = "/select,\"" + safePath + "\"",
                 UseShellExecute = true,
             });
         }
@@ -616,7 +634,26 @@ public sealed class MainForm : Form
             _settings.ClipsFilePath = _store.FilePath;
             _settingsPanel.FilePath = _store.FilePath;
             TrySaveSettings();
-            LoadHistory();
+            try
+            {
+                LoadHistory();
+            }
+            catch (Exception)
+            {
+                // The switch has been persisted (store + settings + settingsPanel all point
+                // at the new file), but the history read failed. We must NOT leave the
+                // in-memory UI state pointing at the *previous* file's _lastLine /
+                // _nextIndex — the next live capture would dedup against the old file's
+                // last line and write old-file-numbered lines into the new file. Reset to
+                // an empty journal so capture starts cleanly from the new file instead.
+                _totalCount = 0;
+                _nextIndex = 1;
+                _lastLine = null;
+                _cardList.SetItems(Array.Empty<ClipCardItem>());
+                UpdateStatusUI();
+                ShowToast(Localization.FileSwitched, isError: true);
+                return;
+            }
             ShowToast(Localization.FileSwitched);
         }
         catch (Exception)
@@ -773,6 +810,7 @@ public sealed class MainForm : Form
             _notifyIcon.Dispose();
             _trayMenu.Dispose();
             _appIcon.Dispose();
+            _searchDebounce.Dispose();
         }
 
         base.Dispose(disposing);

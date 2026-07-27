@@ -79,11 +79,6 @@ public sealed class ModernStatusBadge : Control
         UpdateAccessibility();
     }
 
-    public void RecalculateSize()
-    {
-        Height = Theme.Scale(this, 76);
-    }
-
     protected override void OnMouseEnter(EventArgs e)
     {
         base.OnMouseEnter(e);
