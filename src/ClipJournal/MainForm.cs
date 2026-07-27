@@ -588,7 +588,20 @@ public sealed class MainForm : Form
                 // Clear() failed (locked/readonly target): roll the store back to the
                 // previous path so live capture keeps writing where the user expects,
                 // and settings don't drift to a path that can't actually be written.
-                _store.SetFilePath(previousPath);
+                // Guard the rollback itself: if the previous path has also become
+                // uncreatable in the meantime, prefer to surface the original cause
+                // (not the rollback failure) while still leaving the store pointing
+                // somewhere reasonable. Use a plain rethrow so the original stack and
+                // message survive into the error dialog.
+                try
+                {
+                    _store.SetFilePath(previousPath);
+                }
+                catch
+                {
+                    // Best-effort restore; keep rethrowing the original error below.
+                }
+
                 throw;
             }
 
@@ -667,9 +680,12 @@ public sealed class MainForm : Form
             var fallback = AppSettings.DefaultClipsPath;
             if (string.Equals(fallback, configuredPath, StringComparison.OrdinalIgnoreCase))
             {
-                // Even the default path is broken; surface something usable so the
-                // app still starts instead of looping forever.
-                return new ClipStore(Path.Combine(Path.GetTempPath(), "ClipJournal", "clips.txt"));
+                // Even the default path is broken; fall back to a writable temp
+                // location so the app still starts, and persist it so the next
+                // launch is consistent instead of retrying the broken path.
+                var tempPath = Path.Combine(Path.GetTempPath(), "ClipJournal", "clips.txt");
+                _settings.ClipsFilePath = tempPath;
+                return new ClipStore(tempPath);
             }
 
             _settings.ClipsFilePath = fallback;

@@ -103,7 +103,9 @@ public sealed class ModernNumberStepper : Control
             return;
         }
 
-        base.OnMouseWheel(e);
+        // Intentionally do NOT call base.OnMouseWheel: that routes the event up to
+        // the parent ScrollableControl and would scroll the card list while we also
+        // step the value, producing a confusing double action.
         Value += Math.Sign(e.Delta);
     }
 

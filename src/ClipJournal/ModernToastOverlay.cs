@@ -48,11 +48,13 @@ public sealed class ModernToastOverlay : Control
             return;
         }
 
-        if (_phase is ToastPhase.Entering or ToastPhase.Holding)
+        if (_phase is ToastPhase.Entering or ToastPhase.Holding or ToastPhase.Leaving)
         {
             // Drop the newest candidate (not the oldest) when the backlog is full,
             // so a burst of similar error toasts does not silently discard the first
-            // — usually the most informative — error in the series.
+            // — usually the most informative — error in the series. Leaving is
+            // included so an incoming message during the exit animation queues
+            // behind the current one instead of preempting it and scrambling order.
             if (_queue.Count < 3)
             {
                 _queue.Enqueue((message, isError));
