@@ -43,12 +43,16 @@ Then run `artifacts\ClipJournal\ClipJournal.exe`.
 | Action | Description |
 |---|---|
 | Pause / Resume | Temporarily stop or resume collection |
+| Search | Filter the latest 500 on-screen previews by content or number |
+| Copy a clip | Hover and use the copy action, or select a row and press Enter / Ctrl+C |
 | Open txt | Open the current file with the default app |
 | Open folder | Reveal the file in Explorer |
 | Change file | Pick a new save path (old file is kept) |
 | Clear | Clear the list and empty the current txt |
 | Blank line every N | After clips N, 2N, 3N… insert a blank line in the txt; 0 disables |
 | Exit | Stop listening and quit |
+
+Keyboard shortcuts: `Ctrl+F` focuses search, and `Ctrl+Shift+P` pauses or resumes capture.
 
 ## Language
 

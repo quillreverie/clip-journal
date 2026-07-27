@@ -39,13 +39,14 @@ public sealed class ClipboardListener : NativeWindow, IDisposable
             return;
         }
 
+        // Flip the gate first so any in-flight WndProc bails out before we touch the handle.
+        _started = false;
+
         if (Handle != IntPtr.Zero)
         {
             RemoveClipboardFormatListener(Handle);
             DestroyHandle();
         }
-
-        _started = false;
     }
 
     public void Dispose()
@@ -55,7 +56,10 @@ public sealed class ClipboardListener : NativeWindow, IDisposable
 
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == WmClipboardUpdate)
+        // Guard against messages dispatched after Stop()/Dispose has begun tearing
+        // down the native window; a queued WM_CLIPBOARDUPDATE could otherwise still
+        // fire ClipboardUpdate against a half-disposed listener / MainForm.
+        if (m.Msg == WmClipboardUpdate && _started)
         {
             ClipboardUpdate?.Invoke();
         }

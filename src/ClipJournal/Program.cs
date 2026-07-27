@@ -5,16 +5,21 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
-        ApplicationConfiguration.Initialize();
+        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
 
         using var mutex = SingleInstance.TryAcquire(@"Local\ClipJournal.SingleInstance");
         if (mutex is null)
         {
-            MessageBox.Show(
-                Localization.AlreadyRunning,
-                Localization.AppName,
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            // A second instance: nudge the running window. If the broadcast fails
+            // (UAC/session boundary), tell the user instead of exiting silently,
+            // otherwise double-clicking the exe looks like it does nothing.
+            if (!SingleInstance.SignalShowWindow())
+            {
+                ModernDialog.ShowInfo(Localization.AppName, Localization.AlreadyRunning);
+            }
+
             return;
         }
 
@@ -34,13 +39,7 @@ internal static class Program
             return true;
         }
 
-        var result = MessageBox.Show(
-            Localization.PrivacyMessage(settings.ClipsFilePath),
-            Localization.PrivacyTitle,
-            MessageBoxButtons.OKCancel,
-            MessageBoxIcon.Information);
-
-        if (result != DialogResult.OK)
+        if (!ModernDialog.ConfirmPrivacy(settings.ClipsFilePath))
         {
             return false;
         }

@@ -3,87 +3,123 @@ using System.Globalization;
 namespace ClipJournal;
 
 /// <summary>
-/// Simple UI string table. Language follows the OS UI culture (Chinese if zh*, otherwise English).
+/// UI language follows the Windows display language: Chinese for zh*, English otherwise.
 /// </summary>
 public static class Localization
 {
-    public static bool IsChinese { get; }
-
-    static Localization()
-    {
-        var name = CultureInfo.CurrentUICulture.Name;
-        IsChinese = name.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
-    }
+    public static bool IsChinese { get; } =
+        CultureInfo.CurrentUICulture.Name.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
 
     public static string AppName => "ClipJournal";
+    public static string BrandSubtitle => IsChinese ? "安静地保存每次复制" : "A quiet log for every copy";
 
     public static string AlreadyRunning => IsChinese
         ? "ClipJournal 已在运行。"
         : "ClipJournal is already running.";
 
     public static string PrivacyTitle => IsChinese
-        ? "ClipJournal 隐私说明"
-        : "ClipJournal privacy notice";
+        ? "开始使用 ClipJournal"
+        : "Start using ClipJournal";
 
     public static string PrivacyMessage(string clipsPath) => IsChinese
-        ? "ClipJournal 会监听剪贴板中的文字，并把每次复制压成一行后写入本地 txt 文件。\n\n" +
-          "文件默认位置：\n" + clipsPath + "\n\n" +
-          "请勿在记录密码等敏感信息时使用；可随时暂停监听或清空文件。\n\n是否继续？"
-        : "ClipJournal watches the clipboard for text and appends each copy as a single line to a local .txt file.\n\n" +
-          "Default file location:\n" + clipsPath + "\n\n" +
-          "Do not keep it running while copying passwords or other secrets. You can pause listening or clear the file at any time.\n\nContinue?";
+        ? "ClipJournal 会监听剪贴板中的文字，将多行内容整理为一行，并写入本地 txt 文件。\n\n" +
+          "默认保存位置：\n" + clipsPath + "\n\n" +
+          "内容不会上传。复制密码、验证码或其他敏感信息前，建议先暂停监听。\n\n是否继续？"
+        : "ClipJournal watches the clipboard for text, turns multi-line content into one line, and writes it to a local .txt file.\n\n" +
+          "Default save location:\n" + clipsPath + "\n\n" +
+          "Nothing is uploaded. Pause listening before copying passwords, codes, or other sensitive information.\n\nContinue?";
 
-    public static string Pause => IsChinese ? "暂停" : "Pause";
-    public static string Resume => IsChinese ? "继续" : "Resume";
-    public static string OpenTxt => IsChinese ? "打开 txt" : "Open txt";
-    public static string OpenFolder => IsChinese ? "打开文件夹" : "Open folder";
-    public static string ChangeFile => IsChinese ? "更换文件" : "Change file";
-    public static string Clear => IsChinese ? "清空…" : "Clear…";
+    public static string CaptureSectionLabel => IsChinese ? "剪贴板捕获" : "Clipboard capture";
+    public static string ListeningHeadline => IsChinese ? "正在监听剪贴板" : "Listening to clipboard";
+    public static string PausedHeadline => IsChinese ? "监听已暂停" : "Capture is paused";
+    public static string LocalCountDescription(int count) => IsChinese
+        ? $"本地已保存 {count} 条"
+        : $"{count} saved locally";
+    public static string PauseAction => IsChinese ? "暂停捕获" : "Pause capture";
+    public static string ResumeAction => IsChinese ? "继续捕获" : "Resume capture";
+    public static string PrivacyHint => IsChinese
+        ? "记录只保存在本机。复制密码或验证码前，建议先暂停捕获。"
+        : "Clips stay on this device. Pause capture before copying passwords or codes.";
+
+    public static string RecordsTitle => IsChinese ? "剪贴记录" : "Clipboard journal";
+    public static string RecordsSubtitle => IsChinese
+        ? "自动整理为单行，最近复制的内容会出现在底部"
+        : "Flattened into one line, with the newest clips at the bottom";
+    public static string PreviewScope => IsChinese ? "显示最近 500 条预览" : "Showing the latest 500 previews";
+    public static string CountSummary(int total) => IsChinese ? $"{total} 条记录" : $"{total} clips";
+    public static string FilteredCountSummary(int filtered, int total) => IsChinese
+        ? $"找到 {filtered} 条 · 共 {total} 条"
+        : $"{filtered} found · {total} total";
+    public static string FilteredPreviewSummary(int filtered) => IsChinese
+        ? $"当前预览中找到 {filtered} 条"
+        : $"{filtered} found in this preview";
+    public static string SearchPlaceholder => IsChinese ? "搜索内容或序号" : "Search content or number";
+    public static string ClearSearch => IsChinese ? "清除搜索" : "Clear search";
+    public static string ClearRecords => IsChinese ? "清空记录" : "Clear journal";
+    public static string ClearDialogTitle => IsChinese ? "清空全部记录？" : "Clear the entire journal?";
+    public static string ContinueAction => IsChinese ? "继续使用" : "Continue";
+    public static string CancelAction => IsChinese ? "取消" : "Cancel";
+    public static string GotItAction => IsChinese ? "知道了" : "Got it";
+    public static string ErrorTitle => IsChinese ? "出现了一点问题" : "Something went wrong";
+    public static string EmptyTitle => IsChinese ? "等待第一次复制" : "Waiting for your first copy";
+    public static string EmptyHint => IsChinese
+        ? "在任意应用中复制文字，这里会自动出现记录"
+        : "Copy text in any app and it will appear here automatically";
+    public static string NoResultsTitle => IsChinese ? "没有匹配的记录" : "No matching clips";
+    public static string NoResultsHint => IsChinese
+        ? "换个关键词试试，或清除搜索条件"
+        : "Try a different keyword or clear the search";
+    public static string HistoryItem => IsChinese ? "历史" : "History";
+
+    public static string StorageTitle => IsChinese ? "保存与格式" : "Save & format";
+    public static string StoragePathLabel => IsChinese ? "当前保存位置" : "Current save location";
+    public static string OpenFileShort => IsChinese ? "打开文本" : "Open file";
+    public static string OpenFolderShort => IsChinese ? "打开位置" : "Open folder";
+    public static string ChangeFileShort => IsChinese ? "更换保存文件" : "Change save file";
+    public static string BlankLineLabel => IsChinese ? "自动分段" : "Automatic spacing";
+    public static string BlankLineDescription => IsChinese
+        ? "每隔指定条数插入空行；设为 0 表示关闭"
+        : "Insert a blank line after this many clips; 0 turns it off";
+    public static string BlankLineValue(int value) => value == 0
+        ? (IsChinese ? "自动分段已关闭" : "Automatic spacing is off")
+        : (IsChinese ? $"每 {value} 条插入空行" : $"Blank line every {value} clips");
+
     public static string Exit => IsChinese ? "退出" : "Exit";
 
-    public static string BlankEveryPrefix => IsChinese ? "每" : "Blank line every";
-    public static string BlankEverySuffix => IsChinese ? "条空一行 (0=关)" : "clips (0=off)";
-
-    public static string BlankLineDisabled => IsChinese ? "已关闭自动空行" : "Auto blank lines off";
+    public static string BlankLineDisabled => IsChinese ? "已关闭自动分段" : "Automatic spacing turned off";
     public static string BlankLineEnabled(int n) => IsChinese
-        ? $"每 {n} 条后插入空行"
-        : $"Insert blank line every {n} clips";
+        ? $"现在每 {n} 条插入空行"
+        : $"A blank line will be inserted every {n} clips";
 
-    public static string ShowWindow => IsChinese ? "显示窗口" : "Show window";
-    public static string PauseResume => IsChinese ? "暂停/继续" : "Pause / Resume";
+    public static string ShowWindow => IsChinese ? "显示 ClipJournal" : "Show ClipJournal";
 
-    public static string HistoryLabel => IsChinese ? "历史" : "history";
-
-    public static string ClipboardReadFailed => IsChinese ? "读取剪贴板失败" : "Failed to read clipboard";
-    public static string SkippedDuplicate => IsChinese ? "与上一条相同，已跳过" : "Same as previous, skipped";
+    public static string ClipboardReadFailed => IsChinese ? "暂时无法读取剪贴板" : "Clipboard could not be read";
+    public static string ClipboardListenFailed => IsChinese
+        ? "无法启动剪贴板监听，可能是另一个程序正在独占剪贴板。"
+        : "Could not start clipboard listening; another app may be locking the clipboard.";
+    public static string SkippedDuplicate => IsChinese ? "与上一条相同，已跳过" : "Same as the previous clip, so it was skipped";
     public static string WriteFailed => IsChinese ? "写入文件失败：\n" : "Failed to write file:\n";
-    public static string Truncated => IsChinese ? "内容过长，已截断到 256KB" : "Too long; truncated to 256KB";
+    public static string Truncated => IsChinese ? "内容过长，已截断到 256KB" : "The clip was truncated to 256KB";
     public static string BlankInserted(int index) => IsChinese
-        ? $"第 {index} 条后已插入空行"
-        : $"Blank line inserted after #{index}";
-
-    public static string Resumed => IsChinese ? "已继续监听" : "Listening resumed";
-    public static string Paused => IsChinese ? "已暂停监听" : "Listening paused";
+        ? $"已在第 {index} 条后插入空行"
+        : $"Blank line inserted after clip {index}";
+    public static string Resumed => IsChinese ? "已继续捕获" : "Capture resumed";
+    public static string Paused => IsChinese ? "已暂停捕获" : "Capture paused";
     public static string FileSwitched => IsChinese ? "已切换保存文件" : "Save file changed";
-    public static string Cleared => IsChinese ? "已清空" : "Cleared";
-    public static string HiddenToTray => IsChinese ? "已隐藏到托盘，仍在监听" : "Hidden to tray; still listening";
+    public static string Cleared => IsChinese ? "记录已清空" : "Journal cleared";
+    public static string CopySuccess => IsChinese ? "已复制这条记录" : "Clip copied";
 
-    public static string Listening => IsChinese ? "监听中" : "Listening";
-    public static string StatusPaused => IsChinese ? "已暂停" : "Paused";
-    public static string TotalCount(int n) => IsChinese ? $"共 {n} 条" : $"{n} clips";
-    public static string TrayListening => IsChinese ? "ClipJournal - 监听中" : "ClipJournal - Listening";
-    public static string TrayPaused => IsChinese ? "ClipJournal - 已暂停" : "ClipJournal - Paused";
+    public static string TrayListening => IsChinese ? "ClipJournal · 正在捕获" : "ClipJournal · Capturing";
+    public static string TrayPaused => IsChinese ? "ClipJournal · 已暂停" : "ClipJournal · Paused";
+    public static string TrayHintTitle => IsChinese ? "ClipJournal 仍在运行" : "ClipJournal is still running";
+    public static string TrayHintBody => IsChinese
+        ? "窗口已隐藏到系统托盘。再次启动 ClipJournal 也会直接唤回窗口。"
+        : "The window is in the system tray. Starting ClipJournal again will bring it back.";
 
-    public static string ChooseFileTitle => IsChinese ? "选择保存的 txt 文件" : "Choose the save txt file";
-    public static string FilterTxt => IsChinese
-        ? "文本文件 (*.txt)|*.txt"
-        : "Text files (*.txt)|*.txt";
-
+    public static string ChooseFileTitle => IsChinese ? "选择保存的 txt 文件" : "Choose a text file";
+    public static string FilterTxt => IsChinese ? "文本文件 (*.txt)|*.txt" : "Text files (*.txt)|*.txt";
     public static string ClearConfirm(string path) => IsChinese
-        ? "将清空列表，并清空以下 txt 文件中的全部内容：\n" + path + "\n\n确定吗？"
-        : "This will clear the list and erase all content in:\n" + path + "\n\nContinue?";
-
-    public static string OpenOnlyTxt => IsChinese
-        ? "仅支持打开 .txt 文件"
-        : "Only .txt files can be opened here";
+        ? "这会清空界面中的全部记录，并永久清空以下 txt 文件：\n\n" + path + "\n\n确定继续吗？"
+        : "This permanently clears every clip from the journal and empties this text file:\n\n" + path + "\n\nContinue?";
+    public static string OpenOnlyTxt => IsChinese ? "这里只能打开 .txt 文件" : "Only .txt files can be opened here";
 }

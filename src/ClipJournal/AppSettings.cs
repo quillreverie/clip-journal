@@ -18,6 +18,10 @@ public sealed class AppSettings
     /// </summary>
     public int BlankLineEvery { get; set; }
 
+    /// <summary>Upper bound enforced on load to mirror the UI stepper, so a
+    /// hand-edited settings.json cannot inject a pathologically large value.</summary>
+    private const int BlankLineMax = 999;
+
     public static string DefaultClipsPath =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
@@ -67,6 +71,10 @@ public sealed class AppSettings
             {
                 loaded.BlankLineEvery = 0;
             }
+            else if (loaded.BlankLineEvery > BlankLineMax)
+            {
+                loaded.BlankLineEvery = BlankLineMax;
+            }
 
             return loaded;
         }
@@ -88,6 +96,24 @@ public sealed class AppSettings
         // Atomic-ish write to reduce risk of truncated settings on crash.
         var temp = SettingsPath + ".tmp";
         File.WriteAllText(temp, json);
-        File.Move(temp, SettingsPath, overwrite: true);
+        try
+        {
+            File.Move(temp, SettingsPath, overwrite: true);
+        }
+        catch
+        {
+            // If the final move failed (e.g. settings.json held open by another
+            // process), remove the orphaned temp so it cannot accumulate.
+            try
+            {
+                File.Delete(temp);
+            }
+            catch
+            {
+                // Best-effort cleanup; nothing actionable if the temp is also locked.
+            }
+
+            throw;
+        }
     }
 }
