@@ -47,7 +47,7 @@ public sealed class MainForm : Form
     public MainForm(AppSettings settings)
     {
         _settings = settings;
-        _store = new ClipStore(_settings.ClipsFilePath);
+        _store = CreateStoreSafely(_settings.ClipsFilePath);
 
         Text = Localization.AppName;
         Icon = _appIcon;
@@ -574,10 +574,22 @@ public sealed class MainForm : Form
                 chosen += ".txt";
             }
 
+            var previousPath = _store.FilePath;
             _store.SetFilePath(chosen);
-            if (!File.Exists(_store.FilePath))
+            try
             {
-                _store.Clear();
+                if (!File.Exists(_store.FilePath))
+                {
+                    _store.Clear();
+                }
+            }
+            catch (Exception)
+            {
+                // Clear() failed (locked/readonly target): roll the store back to the
+                // previous path so live capture keeps writing where the user expects,
+                // and settings don't drift to a path that can't actually be written.
+                _store.SetFilePath(previousPath);
+                throw;
             }
 
             _settings.ClipsFilePath = _store.FilePath;
@@ -636,6 +648,32 @@ public sealed class MainForm : Form
         catch (Exception)
         {
             // Live capture will retry; ignore during construction.
+        }
+    }
+
+    // Construct the store defensively: a hand-edited settings.json may point
+    // ClipsFilePath at a format-valid but uncreatable location (missing drive,
+    // permissions). SetFilePath would throw from Directory.CreateDirectory before
+    // the message loop starts, crashing with no UI. Fall back to the default path
+    // and persist that so the next launch is consistent.
+    private ClipStore CreateStoreSafely(string configuredPath)
+    {
+        try
+        {
+            return new ClipStore(configuredPath);
+        }
+        catch (Exception)
+        {
+            var fallback = AppSettings.DefaultClipsPath;
+            if (string.Equals(fallback, configuredPath, StringComparison.OrdinalIgnoreCase))
+            {
+                // Even the default path is broken; surface something usable so the
+                // app still starts instead of looping forever.
+                return new ClipStore(Path.Combine(Path.GetTempPath(), "ClipJournal", "clips.txt"));
+            }
+
+            _settings.ClipsFilePath = fallback;
+            return new ClipStore(fallback);
         }
     }
 
@@ -706,6 +744,7 @@ public sealed class MainForm : Form
     {
         if (disposing)
         {
+            _listener.ClipboardUpdate -= OnClipboardUpdate;
             _listener.Dispose();
             _notifyIcon.Dispose();
             _trayMenu.Dispose();

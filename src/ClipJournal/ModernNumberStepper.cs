@@ -94,6 +94,15 @@ public sealed class ModernNumberStepper : Control
 
     protected override void OnMouseWheel(MouseEventArgs e)
     {
+        // A mouse wheel over the stepper while another control has focus would
+        // silently change the spacing setting (and persist it) without the user
+        // ever clicking in. Require focus so a stray scroll does not rewrite config.
+        if (!Focused)
+        {
+            Focus();
+            return;
+        }
+
         base.OnMouseWheel(e);
         Value += Math.Sign(e.Delta);
     }

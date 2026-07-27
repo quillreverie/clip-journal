@@ -25,7 +25,6 @@ public static class ClipboardReader
                 Thread.Sleep(RetryDelayMs);
             }
 
-            var seqBefore = GetClipboardSequenceNumber();
             if (!OpenClipboard(IntPtr.Zero))
             {
                 continue;
@@ -33,6 +32,12 @@ public static class ClipboardReader
 
             try
             {
+                // Sample the sequence number only after the clipboard is open, so the
+                // consistency check covers the read itself rather than the (longer)
+                // window before OpenClipboard, where a fast-changing clipboard would
+                // wrongly discard every valid snapshot.
+                var seqBefore = GetClipboardSequenceNumber();
+
                 if (!IsClipboardFormatAvailable(CfUnicodeText))
                 {
                     sequence = GetClipboardSequenceNumber();

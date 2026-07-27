@@ -50,12 +50,14 @@ public sealed class ModernToastOverlay : Control
 
         if (_phase is ToastPhase.Entering or ToastPhase.Holding)
         {
-            if (_queue.Count >= 3)
+            // Drop the newest candidate (not the oldest) when the backlog is full,
+            // so a burst of similar error toasts does not silently discard the first
+            // — usually the most informative — error in the series.
+            if (_queue.Count < 3)
             {
-                _queue.Dequeue();
+                _queue.Enqueue((message, isError));
             }
 
-            _queue.Enqueue((message, isError));
             return;
         }
 
