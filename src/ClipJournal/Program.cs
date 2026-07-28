@@ -24,13 +24,89 @@ internal static class Program
         }
 
         var settings = AppSettings.Load(out var settingsWarning);
+        if (!TryCreateStore(settings, out var store, out var pathChanged))
+        {
+            ModernDialog.ShowError(owner: null, Localization.StorageUnavailable);
+            return;
+        }
+
+        if (pathChanged)
+        {
+            settingsWarning = CombineWarnings(
+                settingsWarning,
+                Localization.StoragePathAdjusted(settings.ClipsFilePath));
+        }
+
+        var privacyWasAccepted = settings.PrivacyAccepted;
         if (!EnsurePrivacyAccepted(settings))
         {
             return;
         }
 
-        Application.Run(new MainForm(settings, settingsWarning));
+        // EnsurePrivacyAccepted already saves a newly accepted configuration. When
+        // privacy was accepted on an earlier launch, persist any path fallback now so
+        // the next launch cannot silently jump back to the unusable configured path.
+        if (privacyWasAccepted && pathChanged)
+        {
+            try
+            {
+                settings.Save();
+            }
+            catch
+            {
+                settingsWarning = CombineWarnings(settingsWarning, Localization.SaveSettingsFailedHint);
+            }
+        }
+
+        Application.Run(new MainForm(settings, store!, settingsWarning));
     }
+
+    private static bool TryCreateStore(
+        AppSettings settings,
+        out ClipStore? store,
+        out bool pathChanged)
+    {
+        store = null;
+        pathChanged = false;
+        var configuredPath = settings.ClipsFilePath;
+        var candidates = new[]
+        {
+            configuredPath,
+            AppSettings.DefaultClipsPath,
+            Path.Combine(Path.GetTempPath(), "ClipJournal", "clips.txt"),
+        };
+        var attempted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var candidate in candidates)
+        {
+            if (!attempted.Add(candidate))
+            {
+                continue;
+            }
+
+            try
+            {
+                store = new ClipStore(candidate);
+                settings.ClipsFilePath = store.FilePath;
+                pathChanged = !string.Equals(
+                    configuredPath,
+                    settings.ClipsFilePath,
+                    StringComparison.OrdinalIgnoreCase);
+                return true;
+            }
+            catch
+            {
+                // Try the next local fallback. No clipboard content is written before
+                // privacy confirmation, and the final resolved path is what the dialog
+                // displays.
+            }
+        }
+
+        return false;
+    }
+
+    private static string CombineWarnings(string? first, string second)
+        => string.IsNullOrWhiteSpace(first) ? second : first + Environment.NewLine + second;
 
     private static bool EnsurePrivacyAccepted(AppSettings settings)
     {

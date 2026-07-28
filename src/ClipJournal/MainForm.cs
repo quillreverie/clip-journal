@@ -38,6 +38,8 @@ public sealed class MainForm : Form
     private bool _listening = true;
     private bool _exiting;
     private bool _handlingClipboard;
+    private bool _historyReady = true;
+    private bool _storageWritable;
     private bool _trayHintShown;
     private string? _lastLine;
     private int _totalCount;
@@ -46,10 +48,10 @@ public sealed class MainForm : Form
     private DateTime _suppressedClipboardUntilUtc;
     private readonly string? _startupWarning;
 
-    public MainForm(AppSettings settings, string? startupWarning = null)
+    public MainForm(AppSettings settings, ClipStore store, string? startupWarning = null)
     {
         _settings = settings;
-        _store = CreateStoreSafely(_settings.ClipsFilePath);
+        _store = store;
         _startupWarning = startupWarning;
 
         Text = Localization.AppName;
@@ -64,7 +66,7 @@ public sealed class MainForm : Form
         DoubleBuffered = true;
         KeyPreview = true;
 
-        EnsureClipsFileExistsSafe();
+        _storageWritable = EnsureClipsFileWritableSafe();
         BuildUi();
         BuildTray();
         try
@@ -80,7 +82,15 @@ public sealed class MainForm : Form
             _nextIndex = 1;
             _lastLine = null;
             _cardList.SetItems(Array.Empty<ClipCardItem>());
+            _historyReady = false;
+            _listening = false;
         }
+
+        if (!_storageWritable)
+        {
+            _listening = false;
+        }
+
         UpdateStatusUI();
 
         _listener.ClipboardUpdate += OnClipboardUpdate;
@@ -108,6 +118,16 @@ public sealed class MainForm : Form
             if (_startupWarning is not null && !IsDisposed)
             {
                 ShowToast(_startupWarning, isError: true);
+            }
+
+            if (!_historyReady && !IsDisposed)
+            {
+                ShowToast(Localization.HistoryReadFailedHint, isError: true);
+            }
+
+            if (!_storageWritable && !IsDisposed)
+            {
+                ShowToast(Localization.WriteFailedHint, isError: true);
             }
         };
         KeyDown += OnMainKeyDown;
@@ -345,6 +365,7 @@ public sealed class MainForm : Form
 
         _cardList.SetItems(cards);
         _lastLine = lines.Count > 0 ? lines[^1] : null;
+        _historyReady = true;
         UpdateStatusUI();
     }
 
@@ -382,7 +403,11 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (!ClipboardReader.TryReadUnicodeText(out var text, out _))
+        if (!ClipboardReader.TryReadUnicodeText(
+                MaxLineChars,
+                out var text,
+                out _,
+                out var readerTruncated))
         {
             ShowToast(Localization.ClipboardReadFailed, isError: true);
             return;
@@ -394,6 +419,7 @@ public sealed class MainForm : Form
         }
 
         var (line, wasTruncated) = TextNormalizer.ToSingleLine(text, MaxLineChars);
+        wasTruncated |= readerTruncated;
         if (TextNormalizer.IsIgnorable(line))
         {
             return;
@@ -435,6 +461,9 @@ public sealed class MainForm : Form
         }
         catch (Exception)
         {
+            _storageWritable = false;
+            _listening = false;
+            UpdateStatusUI();
             if (!IsDisposed)
             {
                 ShowToast(Localization.WriteFailedHint, isError: true);
@@ -483,9 +512,59 @@ public sealed class MainForm : Form
 
     private void TogglePause()
     {
-        _listening = !_listening;
+        if (_listening)
+        {
+            _listening = false;
+            UpdateStatusUI();
+            ShowToast(Localization.Paused);
+            return;
+        }
+
+        try
+        {
+            _store.EnsureWritable();
+            _storageWritable = true;
+        }
+        catch
+        {
+            _storageWritable = false;
+            UpdateStatusUI();
+            ShowToast(Localization.WriteFailedHint, isError: true);
+            return;
+        }
+
+        if (!_historyReady)
+        {
+            try
+            {
+                LoadHistory();
+            }
+            catch
+            {
+                _historyReady = false;
+                UpdateStatusUI();
+                ShowToast(Localization.HistoryReadFailedHint, isError: true);
+                return;
+            }
+        }
+
+        try
+        {
+            // Start is idempotent after an ordinary pause, but retries native setup
+            // after a transient startup failure. Only advertise "capturing" on success.
+            _listener.Start();
+        }
+        catch
+        {
+            _listening = false;
+            UpdateStatusUI();
+            ModernDialog.ShowError(this, Localization.ClipboardListenFailed);
+            return;
+        }
+
+        _listening = true;
         UpdateStatusUI();
-        ShowToast(_listening ? Localization.Resumed : Localization.Paused);
+        ShowToast(Localization.Resumed);
     }
 
     private void UpdateStatusUI()
@@ -614,10 +693,10 @@ public sealed class MainForm : Form
             _store.SetFilePath(chosen);
             try
             {
-                if (!File.Exists(_store.FilePath))
-                {
-                    _store.Clear();
-                }
+                // Probe both new and existing targets without truncating them. The old
+                // code only touched missing files, so an existing readonly/locked file
+                // was persisted and reported as a successful switch.
+                _store.EnsureWritable();
             }
             catch (Exception)
             {
@@ -643,6 +722,7 @@ public sealed class MainForm : Form
 
             _settings.ClipsFilePath = _store.FilePath;
             _settingsPanel.FilePath = _store.FilePath;
+            _storageWritable = true;
             TrySaveSettings();
             try
             {
@@ -660,8 +740,10 @@ public sealed class MainForm : Form
                 _nextIndex = 1;
                 _lastLine = null;
                 _cardList.SetItems(Array.Empty<ClipCardItem>());
+                _historyReady = false;
+                _listening = false;
                 UpdateStatusUI();
-                ShowToast(Localization.FileSwitched, isError: true);
+                ShowToast(Localization.HistoryReadFailedHint, isError: true);
                 return;
             }
             ShowToast(Localization.FileSwitched);
@@ -687,11 +769,16 @@ public sealed class MainForm : Form
             _lastLine = null;
             _totalCount = 0;
             _nextIndex = 1;
+            _historyReady = true;
+            _storageWritable = true;
             UpdateStatusUI();
             ShowToast(Localization.Cleared);
         }
         catch (Exception)
         {
+            _storageWritable = false;
+            _listening = false;
+            UpdateStatusUI();
             ModernDialog.ShowError(this, Localization.ClearFailedHint);
         }
     }
@@ -700,51 +787,24 @@ public sealed class MainForm : Form
     {
         if (!File.Exists(_store.FilePath))
         {
-            _store.Clear();
+            _store.EnsureWritable();
         }
     }
 
-    // Constructor-safe variant: a missing clips file is created by Clear(), which
-    // opens with FileShare.None; if the path is temporarily locked/readonly we must
-    // not throw before the message loop is running.
-    private void EnsureClipsFileExistsSafe()
+    // Constructor-safe write probe: if the target is temporarily locked/readonly we
+    // must not throw before the message loop is running.
+    private bool EnsureClipsFileWritableSafe()
     {
         try
         {
-            EnsureClipsFileExists();
+            _store.EnsureWritable();
+            return true;
         }
         catch (Exception)
         {
-            // Live capture will retry; ignore during construction.
-        }
-    }
-
-    // Construct the store defensively: a hand-edited settings.json may point
-    // ClipsFilePath at a format-valid but uncreatable location (missing drive,
-    // permissions). SetFilePath would throw from Directory.CreateDirectory before
-    // the message loop starts, crashing with no UI. Fall back to the default path
-    // and persist that so the next launch is consistent.
-    private ClipStore CreateStoreSafely(string configuredPath)
-    {
-        try
-        {
-            return new ClipStore(configuredPath);
-        }
-        catch (Exception)
-        {
-            var fallback = AppSettings.DefaultClipsPath;
-            if (string.Equals(fallback, configuredPath, StringComparison.OrdinalIgnoreCase))
-            {
-                // Even the default path is broken; fall back to a writable temp
-                // location so the app still starts, and persist it so the next
-                // launch is consistent instead of retrying the broken path.
-                var tempPath = Path.Combine(Path.GetTempPath(), "ClipJournal", "clips.txt");
-                _settings.ClipsFilePath = tempPath;
-                return new ClipStore(tempPath);
-            }
-
-            _settings.ClipsFilePath = fallback;
-            return new ClipStore(fallback);
+            // Start paused; Resume retries after the user fixes permissions or changes
+            // the target instead of repeatedly dropping clips while claiming to listen.
+            return false;
         }
     }
 

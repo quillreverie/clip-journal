@@ -13,13 +13,24 @@ public static class ClipboardReader
     /// Returns false only when the clipboard could not be opened after retries.
     /// Returns true with <paramref name="text"/> null when there is no Unicode text.
     /// </summary>
-    public static bool TryReadUnicodeText(out string? text, out uint sequence)
+    public static bool TryReadUnicodeText(
+        int maxChars,
+        out string? text,
+        out uint sequence,
+        out bool truncated)
     {
+        if (maxChars <= 0 || maxChars == int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxChars));
+        }
+
         text = null;
         sequence = 0;
+        truncated = false;
 
         for (var attempt = 0; attempt < MaxRetries; attempt++)
         {
+            truncated = false;
             if (attempt > 0)
             {
                 Thread.Sleep(RetryDelayMs);
@@ -63,9 +74,14 @@ public static class ClipboardReader
                     // can omit it; an unbounded PtrToStringUni would then scan past the
                     // allocation into garbage or fault. Char count = byte size / 2.
                     var sizeBytes = GlobalSize(handle);
-                    var charCount = sizeBytes <= 0 ? 0 : (int)(sizeBytes / 2);
-                    var value = charCount > 0
-                        ? Marshal.PtrToStringUni(pointer, charCount)!
+                    var availableChars = sizeBytes / 2;
+                    // Read one extra UTF-16 code unit when available so an exact-limit
+                    // string can be distinguished from a longer source. Crucially, do
+                    // not allocate a managed string proportional to a hostile HGLOBAL.
+                    var readLimit = (nuint)maxChars + 1;
+                    var charsToRead = availableChars < readLimit ? availableChars : readLimit;
+                    var value = charsToRead > 0
+                        ? Marshal.PtrToStringUni(pointer, checked((int)charsToRead))!
                         : string.Empty;
 
                     // Sample the sequence number *after* the memory copy so the consistency
@@ -84,6 +100,11 @@ public static class ClipboardReader
                     if (firstNul >= 0)
                     {
                         value = value[..firstNul];
+                    }
+                    else if (availableChars > (nuint)maxChars)
+                    {
+                        value = value[..maxChars];
+                        truncated = true;
                     }
 
                     sequence = seqAfter;
@@ -126,5 +147,5 @@ public static class ClipboardReader
     private static extern bool GlobalUnlock(IntPtr hMem);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr GlobalSize(IntPtr hMem);
+    private static extern nuint GlobalSize(IntPtr hMem);
 }

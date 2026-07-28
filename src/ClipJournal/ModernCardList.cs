@@ -343,7 +343,23 @@ public sealed class ModernCardList : Control
     }
 
     protected override bool IsInputKey(Keys keyData)
-        => keyData is Keys.Up or Keys.Down or Keys.Home or Keys.End || base.IsInputKey(keyData);
+        => (keyData & Keys.KeyCode) is Keys.Up or Keys.Down or Keys.Home or Keys.End or Keys.Enter ||
+           base.IsInputKey(keyData);
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == (Keys.Control | Keys.C))
+        {
+            if (_selectedItem is not null)
+            {
+                ItemCopyClicked?.Invoke(this, new ItemActionEventArgs(_selectedItem));
+            }
+
+            return true;
+        }
+
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
 
     protected override void OnKeyDown(KeyEventArgs e)
     {

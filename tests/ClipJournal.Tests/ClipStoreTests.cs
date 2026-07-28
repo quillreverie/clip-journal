@@ -156,4 +156,85 @@ public class ClipStoreTests
             }
         }
     }
+
+    [Fact]
+    public void AppendLine_adds_boundary_when_existing_file_has_no_final_newline()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cj-" + Guid.NewGuid() + ".txt");
+        try
+        {
+            File.WriteAllText(path, "old");
+            var store = new ClipStore(path);
+
+            store.AppendLine("new");
+
+            var normalized = File.ReadAllText(path).Replace("\r\n", "\n");
+            Assert.Equal("old\nnew\n", normalized);
+            Assert.Equal(2, store.CountNonEmptyLines());
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
+    [Fact]
+    public void ReadTailLines_returns_all_requested_large_lines()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cj-" + Guid.NewGuid() + ".txt");
+        try
+        {
+            var store = new ClipStore(path);
+            var lines = Enumerable.Range(1, 4)
+                .Select(index => index + ":" + new string((char)('a' + index), 262_144))
+                .ToArray();
+            foreach (var line in lines)
+            {
+                store.AppendLine(line);
+            }
+
+            var tail = store.ReadTailLines(4);
+
+            Assert.Equal(lines, tail);
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
+    [Fact]
+    public void Constructor_rejects_non_txt_path()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cj-" + Guid.NewGuid() + ".json");
+        Assert.Throws<ArgumentException>(() => new ClipStore(path));
+    }
+
+    [Fact]
+    public void EnsureWritable_rejects_readonly_file()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cj-" + Guid.NewGuid() + ".txt");
+        try
+        {
+            File.WriteAllText(path, "existing");
+            File.SetAttributes(path, File.GetAttributes(path) | FileAttributes.ReadOnly);
+            var store = new ClipStore(path);
+
+            Assert.Throws<UnauthorizedAccessException>(() => store.EnsureWritable());
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.SetAttributes(path, FileAttributes.Normal);
+                File.Delete(path);
+            }
+        }
+    }
 }

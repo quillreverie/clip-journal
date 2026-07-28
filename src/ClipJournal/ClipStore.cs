@@ -25,21 +25,60 @@ public sealed class ClipStore
 
     public void SetFilePath(string path)
     {
+        var full = PrepareFilePath(path);
+
+        lock (_lock)
+        {
+            _filePath = full;
+        }
+    }
+
+    /// <summary>
+    /// Validates and prepares a journal path without creating or modifying the file.
+    /// Storage is deliberately restricted to ordinary .txt paths: settings.json is
+    /// user-editable, so this boundary prevents an invalid setting from appending to
+    /// or clearing an unrelated file type.
+    /// </summary>
+    public static string PrepareFilePath(string path)
+    {
         if (string.IsNullOrWhiteSpace(path))
         {
             throw new ArgumentException("Path is required.", nameof(path));
         }
 
         var full = Path.GetFullPath(path);
+        if (!string.Equals(Path.GetExtension(full), ".txt", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("The journal path must use the .txt extension.", nameof(path));
+        }
+
+        if (Directory.Exists(full))
+        {
+            throw new IOException("The journal path points to a directory.");
+        }
+
         var dir = Path.GetDirectoryName(full);
         if (!string.IsNullOrEmpty(dir))
         {
             Directory.CreateDirectory(dir);
         }
 
+        return full;
+    }
+
+    /// <summary>
+    /// Verifies that the current target can be opened for writing without changing
+    /// its contents. A missing file is created, matching the next append's behavior.
+    /// </summary>
+    public void EnsureWritable()
+    {
         lock (_lock)
         {
-            _filePath = full;
+            using var stream = new FileStream(
+                _filePath,
+                FileMode.OpenOrCreate,
+                FileAccess.Write,
+                FileShare.Read);
         }
     }
 
@@ -72,10 +111,28 @@ public sealed class ClipStore
         {
             using var stream = new FileStream(
                 _filePath,
-                FileMode.Append,
-                FileAccess.Write,
+                FileMode.OpenOrCreate,
+                FileAccess.ReadWrite,
                 FileShare.Read);
+
+            var needsLineBoundary = false;
+            if (stream.Length > 0)
+            {
+                stream.Position = stream.Length - 1;
+                var finalByte = stream.ReadByte();
+                needsLineBoundary = finalByte is not ('\r' or '\n');
+            }
+
+            stream.Position = stream.Length;
             using var writer = new StreamWriter(stream, Utf8NoBom);
+            if (needsLineBoundary)
+            {
+                // A user may select or externally edit a txt file whose final line has
+                // no EOL. Add the missing boundary before appending so two clips cannot
+                // be permanently merged into one record.
+                writer.WriteLine();
+            }
+
             if (contentLine is not null)
             {
                 writer.WriteLine(contentLine);
@@ -111,26 +168,32 @@ public sealed class ClipStore
                 return Array.Empty<string>();
             }
 
-            // MVP: small files expected. For large files, only read the last 1MB.
-            const long maxRead = 1 * 1024 * 1024;
-            List<string> lines;
-            if (info.Length <= maxRead)
+            // Stream the whole file while retaining only the requested tail. A fixed
+            // byte window loses valid entries when a few legal 256K clips exceed it;
+            // startup already scans the full file for CountNonEmptyLines, so this keeps
+            // bounded memory without introducing a new asymptotic I/O cost.
+            var lines = new Queue<string>(Math.Min(n, 1024));
+            using (var stream = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var reader = new StreamReader(stream, Utf8NoBom, detectEncodingFromByteOrderMarks: true))
             {
-                lines = File.ReadAllLines(_filePath, Utf8NoBom)
-                    .Where(static l => !string.IsNullOrWhiteSpace(l))
-                    .ToList();
-            }
-            else
-            {
-                lines = ReadLastChunkLines(_filePath, maxRead);
+                while (!reader.EndOfStream)
+                {
+                    var line = reader.ReadLine();
+                    if (string.IsNullOrWhiteSpace(line))
+                    {
+                        continue;
+                    }
+
+                    if (lines.Count == n)
+                    {
+                        lines.Dequeue();
+                    }
+
+                    lines.Enqueue(line);
+                }
             }
 
-            if (lines.Count <= n)
-            {
-                return lines;
-            }
-
-            return lines.Skip(lines.Count - n).ToList();
+            return lines.ToList();
         }
     }
 
@@ -176,30 +239,4 @@ public sealed class ClipStore
         }
     }
 
-    private static List<string> ReadLastChunkLines(string path, long maxRead)
-    {
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        var length = stream.Length;
-        var start = Math.Max(0, length - maxRead);
-        stream.Position = start;
-
-        using var reader = new StreamReader(stream, Utf8NoBom, detectEncodingFromByteOrderMarks: true);
-        // If we started mid-file, drop the partial first line.
-        if (start > 0)
-        {
-            _ = reader.ReadLine();
-        }
-
-        var lines = new List<string>();
-        while (!reader.EndOfStream)
-        {
-            var line = reader.ReadLine();
-            if (!string.IsNullOrWhiteSpace(line))
-            {
-                lines.Add(line);
-            }
-        }
-
-        return lines;
-    }
 }

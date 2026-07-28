@@ -103,6 +103,9 @@ public sealed class ModernStatusBadge : Control
         }
     }
 
+    protected override bool IsInputKey(Keys keyData)
+        => (keyData & Keys.KeyCode) is Keys.Enter or Keys.Space || base.IsInputKey(keyData);
+
     private void UpdateTimerState()
     {
         if (_isListening && Visible)

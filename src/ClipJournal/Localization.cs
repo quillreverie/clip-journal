@@ -144,4 +144,16 @@ public static class Localization
         => IsChinese
             ? "settings.json 已损坏，已恢复为默认设置。原文件已尝试备份为 settings.json.broken。"
             : "settings.json was unreadable and has been reset to defaults. The original was attempted to be backed up as settings.json.broken.";
+
+    public static string StoragePathAdjusted(string path) => IsChinese
+        ? "原保存路径无效或不可用，已改用以下本地 txt：\n" + path
+        : "The configured save path was invalid or unavailable. This local text file will be used instead:\n" + path;
+
+    public static string StorageUnavailable => IsChinese
+        ? "无法准备任何本地 txt 保存位置。请检查“文档”和临时目录的权限。"
+        : "No local text-file location could be prepared. Check access to Documents and the temporary folder.";
+
+    public static string HistoryReadFailedHint => IsChinese
+        ? "无法读取现有记录，捕获已暂停。关闭占用该文件的程序后可点击继续重试。"
+        : "The existing journal could not be read, so capture is paused. Close the app holding the file and resume to retry.";
 }

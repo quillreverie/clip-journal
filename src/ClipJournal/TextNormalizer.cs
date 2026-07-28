@@ -18,7 +18,7 @@ public static class TextNormalizer
 
         foreach (var ch in text)
         {
-            if (ch is '\r' or '\n' or '\t' or ' ')
+            if (char.IsWhiteSpace(ch))
             {
                 if (!prevSpace && sb.Length > 0)
                 {

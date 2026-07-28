@@ -62,4 +62,19 @@ public class TextNormalizerTests
         Assert.True(truncated);
         Assert.Equal("ab", t);
     }
+
+    [Theory]
+    [InlineData("alpha\u000Bbeta", "alpha beta")]
+    [InlineData("alpha\u000Cbeta", "alpha beta")]
+    [InlineData("alpha\u0085beta", "alpha beta")]
+    [InlineData("alpha\u00A0beta", "alpha beta")]
+    [InlineData("alpha\u2028beta", "alpha beta")]
+    [InlineData("alpha\u2029beta", "alpha beta")]
+    public void ToSingleLine_flattens_unicode_whitespace(string input, string expected)
+    {
+        var (result, truncated) = TextNormalizer.ToSingleLine(input);
+
+        Assert.False(truncated);
+        Assert.Equal(expected, result);
+    }
 }
