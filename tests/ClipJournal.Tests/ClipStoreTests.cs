@@ -1,4 +1,5 @@
 using ClipJournal;
+using System.Text;
 
 namespace ClipJournal.Tests;
 
@@ -189,7 +190,11 @@ public class ClipStoreTests
         {
             var store = new ClipStore(path);
             var lines = Enumerable.Range(1, 4)
-                .Select(index => index + ":" + new string((char)('a' + index), 262_144))
+                .Select(index =>
+                    index + ":" +
+                    new string(
+                        (char)('a' + index),
+                        ClipStore.MaxStoredLineChars - 2))
                 .ToArray();
             foreach (var line in lines)
             {
@@ -233,6 +238,87 @@ public class ClipStoreTests
             if (File.Exists(path))
             {
                 File.SetAttributes(path, FileAttributes.Normal);
+                File.Delete(path);
+            }
+        }
+    }
+
+    public static IEnumerable<object[]> SupportedEncodings()
+    {
+        yield return new object[] { new UTF8Encoding(encoderShouldEmitUTF8Identifier: false) };
+        yield return new object[] { new UTF8Encoding(encoderShouldEmitUTF8Identifier: true) };
+        yield return new object[] { Encoding.Unicode };
+        yield return new object[] { Encoding.BigEndianUnicode };
+        yield return new object[] { Encoding.UTF32 };
+        yield return new object[] { new UTF32Encoding(bigEndian: true, byteOrderMark: true) };
+    }
+
+    [Theory]
+    [MemberData(nameof(SupportedEncodings))]
+    public void AppendLine_preserves_existing_bom_encoding_and_line_boundary(Encoding encoding)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cj-" + Guid.NewGuid() + ".txt");
+        try
+        {
+            File.WriteAllText(path, "旧", encoding);
+            var originalPreamble = encoding.GetPreamble();
+            var store = new ClipStore(path);
+
+            store.AppendLine("新");
+
+            var bytes = File.ReadAllBytes(path);
+            Assert.True(bytes.AsSpan().StartsWith(originalPreamble));
+            Assert.Equal(
+                "旧" + Environment.NewLine + "新" + Environment.NewLine,
+                File.ReadAllText(path, encoding));
+            var snapshot = store.ReadSnapshot(10);
+            Assert.Equal(2, snapshot.TotalCount);
+            Assert.Equal(new[] { "旧", "新" }, snapshot.TailLines);
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
+    [Fact]
+    public void ReadSnapshot_rejects_external_line_over_capture_limit()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cj-" + Guid.NewGuid() + ".txt");
+        try
+        {
+            File.WriteAllText(path, new string('x', ClipStore.MaxStoredLineChars + 1));
+            var store = new ClipStore(path);
+
+            Assert.Throws<InvalidDataException>(() => store.ReadSnapshot(500));
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
+    [Fact]
+    public void ReadSnapshot_rejects_invalid_bomless_utf8_before_append()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cj-" + Guid.NewGuid() + ".txt");
+        try
+        {
+            File.WriteAllBytes(path, new byte[] { 0x63, 0x61, 0x66, 0xE9 });
+            var store = new ClipStore(path);
+
+            Assert.Throws<DecoderFallbackException>(() => store.ReadSnapshot(500));
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
                 File.Delete(path);
             }
         }

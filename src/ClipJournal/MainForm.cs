@@ -5,7 +5,7 @@ namespace ClipJournal;
 public sealed class MainForm : Form
 {
     private const int MaxUiItems = 500;
-    private const int MaxLineChars = 256 * 1024;
+    private const int MaxLineChars = ClipStore.MaxStoredLineChars;
 
     private readonly AppSettings _settings;
     private readonly ClipStore _store;
@@ -44,8 +44,7 @@ public sealed class MainForm : Form
     private string? _lastLine;
     private int _totalCount;
     private int _nextIndex = 1;
-    private string? _suppressedClipboardText;
-    private DateTime _suppressedClipboardUntilUtc;
+    private uint? _suppressedClipboardSequence;
     private readonly string? _startupWarning;
 
     public MainForm(AppSettings settings, ClipStore store, string? startupWarning = null)
@@ -354,10 +353,11 @@ public sealed class MainForm : Form
 
     private void LoadHistory()
     {
-        _totalCount = _store.CountNonEmptyLines();
+        var snapshot = _store.ReadSnapshot(MaxUiItems);
+        _totalCount = snapshot.TotalCount;
         _nextIndex = _totalCount + 1;
 
-        var lines = _store.ReadTailLines(MaxUiItems);
+        var lines = snapshot.TailLines;
         var startIndex = Math.Max(1, _totalCount - lines.Count + 1);
         var cards = lines
             .Select((content, offset) => new ClipCardItem(startIndex + offset, string.Empty, content))
@@ -406,7 +406,7 @@ public sealed class MainForm : Form
         if (!ClipboardReader.TryReadUnicodeText(
                 MaxLineChars,
                 out var text,
-                out _,
+                out var sequence,
                 out var readerTruncated))
         {
             ShowToast(Localization.ClipboardReadFailed, isError: true);
@@ -425,19 +425,17 @@ public sealed class MainForm : Form
             return;
         }
 
-        // Suppress the clipboard echo produced by our own SetText (OnItemCopyClicked). The
-        // echo can fire more than once for a single user action: double-clicking the copy
-        // button issues two SetText calls, and some clipboard chains emit two updates per
-        // SetText. The old code cleared _suppressedClipboardText after the first match, so
-        // the second echo was then recorded as a brand-new clip (and silently written to
-        // file) whenever the copied item wasn't the most recent capture. Keep the gate
-        // armed for the whole 2s window and suppress *every* echo whose content matches the
-        // item we copied; a non-matching clip falls through to normal capture unchanged.
-        if (_suppressedClipboardText is not null &&
-            DateTime.UtcNow <= _suppressedClipboardUntilUtc &&
-            string.Equals(line, _suppressedClipboardText, StringComparison.Ordinal))
+        // WM_CLIPBOARDUPDATE can be delivered more than once for our SetText. Suppress
+        // only notifications for that exact clipboard generation; a later external copy
+        // of identical text has a new sequence number and must be captured normally.
+        if (_suppressedClipboardSequence is uint suppressedSequence)
         {
-            return;
+            if (sequence == suppressedSequence)
+            {
+                return;
+            }
+
+            _suppressedClipboardSequence = null;
         }
 
         if (string.Equals(line, _lastLine, StringComparison.Ordinal))
@@ -498,14 +496,14 @@ public sealed class MainForm : Form
     {
         try
         {
-            _suppressedClipboardText = e.Item.Content;
-            _suppressedClipboardUntilUtc = DateTime.UtcNow.AddSeconds(2);
             Clipboard.SetText(e.Item.Content);
+            var sequence = ClipboardReader.GetCurrentSequenceNumber();
+            _suppressedClipboardSequence = sequence == 0 ? null : sequence;
             ShowToast(Localization.CopySuccess);
         }
         catch (Exception)
         {
-            _suppressedClipboardText = null;
+            _suppressedClipboardSequence = null;
             ShowToast(Localization.CopyFailedHint, isError: true);
         }
     }
@@ -693,28 +691,30 @@ public sealed class MainForm : Form
             _store.SetFilePath(chosen);
             try
             {
-                // Probe both new and existing targets without truncating them. The old
-                // code only touched missing files, so an existing readonly/locked file
-                // was persisted and reported as a successful switch.
+                // Validate writability and load a bounded snapshot before committing the
+                // selection to settings. This prevents a locked, malformed, or oversized
+                // external file from becoming a persistent startup failure.
                 _store.EnsureWritable();
+                LoadHistory();
+                _storageWritable = true;
             }
             catch (Exception)
             {
-                // Clear() failed (locked/readonly target): roll the store back to the
-                // previous path so live capture keeps writing where the user expects,
-                // and settings don't drift to a path that can't actually be written.
-                // Guard the rollback itself: if the previous path has also become
-                // uncreatable in the meantime, prefer to surface the original cause
-                // (not the rollback failure) while still leaving the store pointing
-                // somewhere reasonable. Use a plain rethrow so the original stack and
-                // message survive into the error dialog.
                 try
                 {
                     _store.SetFilePath(previousPath);
+                    _store.EnsureWritable();
+                    LoadHistory();
+                    _storageWritable = true;
                 }
                 catch
                 {
-                    // Best-effort restore; keep rethrowing the original error below.
+                    // The original target changed at the same time. Keep capture paused
+                    // instead of treating an unknown history state as an empty journal.
+                    _storageWritable = false;
+                    _historyReady = false;
+                    _listening = false;
+                    UpdateStatusUI();
                 }
 
                 throw;
@@ -722,30 +722,7 @@ public sealed class MainForm : Form
 
             _settings.ClipsFilePath = _store.FilePath;
             _settingsPanel.FilePath = _store.FilePath;
-            _storageWritable = true;
             TrySaveSettings();
-            try
-            {
-                LoadHistory();
-            }
-            catch (Exception)
-            {
-                // The switch has been persisted (store + settings + settingsPanel all point
-                // at the new file), but the history read failed. We must NOT leave the
-                // in-memory UI state pointing at the *previous* file's _lastLine /
-                // _nextIndex — the next live capture would dedup against the old file's
-                // last line and write old-file-numbered lines into the new file. Reset to
-                // an empty journal so capture starts cleanly from the new file instead.
-                _totalCount = 0;
-                _nextIndex = 1;
-                _lastLine = null;
-                _cardList.SetItems(Array.Empty<ClipCardItem>());
-                _historyReady = false;
-                _listening = false;
-                UpdateStatusUI();
-                ShowToast(Localization.HistoryReadFailedHint, isError: true);
-                return;
-            }
             ShowToast(Localization.FileSwitched);
         }
         catch (Exception)

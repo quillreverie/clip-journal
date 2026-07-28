@@ -8,6 +8,8 @@ public static class ClipboardReader
     private const int MaxRetries = 5;
     private const int RetryDelayMs = 20;
 
+    public static uint GetCurrentSequenceNumber() => GetClipboardSequenceNumber();
+
     /// <summary>
     /// Tries to read Unicode text from the clipboard.
     /// Returns false only when the clipboard could not be opened after retries.

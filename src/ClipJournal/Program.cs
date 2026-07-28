@@ -87,6 +87,11 @@ internal static class Program
             try
             {
                 store = new ClipStore(candidate);
+                // A valid path is not necessarily usable (readonly file, ACL, or a
+                // long-lived exclusive lock). Probe inside the candidate loop so the
+                // fallback actually selects a writable target before privacy consent
+                // and before the resolved path is persisted.
+                store.EnsureWritable();
                 settings.ClipsFilePath = store.FilePath;
                 pathChanged = !string.Equals(
                     configuredPath,

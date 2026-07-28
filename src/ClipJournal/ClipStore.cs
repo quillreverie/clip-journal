@@ -1,10 +1,22 @@
+using System.Text;
+
 namespace ClipJournal;
+
+public sealed record ClipStoreSnapshot(int TotalCount, IReadOnlyList<string> TailLines);
 
 public sealed class ClipStore
 {
-    private static readonly System.Text.Encoding Utf8NoBom = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+    public const int MaxStoredLineChars = 256 * 1024;
+
+    private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private readonly object _lock = new();
     private string _filePath;
+
+    private readonly record struct FileEncoding(
+        Encoding WriteEncoding,
+        Encoding ReadEncoding,
+        int PreambleLength,
+        int CodeUnitWidth);
 
     public ClipStore(string filePath)
     {
@@ -115,35 +127,35 @@ public sealed class ClipStore
                 FileAccess.ReadWrite,
                 FileShare.Read);
 
-            var needsLineBoundary = false;
-            if (stream.Length > 0)
-            {
-                stream.Position = stream.Length - 1;
-                var finalByte = stream.ReadByte();
-                needsLineBoundary = finalByte is not ('\r' or '\n');
-            }
+            var fileEncoding = DetectEncoding(stream);
+            var needsLineBoundary = HasContentWithoutFinalLineBreak(stream, fileEncoding);
 
             stream.Position = stream.Length;
-            using var writer = new StreamWriter(stream, Utf8NoBom);
-            if (needsLineBoundary)
+            using (var writer = new StreamWriter(
+                       stream,
+                       fileEncoding.WriteEncoding,
+                       bufferSize: 1024,
+                       leaveOpen: true))
             {
-                // A user may select or externally edit a txt file whose final line has
-                // no EOL. Add the missing boundary before appending so two clips cannot
-                // be permanently merged into one record.
-                writer.WriteLine();
+                if (needsLineBoundary)
+                {
+                    // A user may select or externally edit a txt file whose final line
+                    // has no EOL. Add the missing boundary in the file's existing
+                    // BOM-selected encoding so two clips cannot be merged or corrupted.
+                    writer.WriteLine();
+                }
+
+                if (contentLine is not null)
+                {
+                    writer.WriteLine(contentLine);
+                }
+
+                if (trailingBlankLine)
+                {
+                    writer.WriteLine();
+                }
             }
 
-            if (contentLine is not null)
-            {
-                writer.WriteLine(contentLine);
-            }
-
-            if (trailingBlankLine)
-            {
-                writer.WriteLine();
-            }
-
-            writer.Flush();
             stream.Flush(true);
         }
     }
@@ -155,45 +167,113 @@ public sealed class ClipStore
             return Array.Empty<string>();
         }
 
+        return ReadSnapshot(n).TailLines;
+    }
+
+    /// <summary>
+    /// Reads the total count and bounded preview tail in one pass. Lines larger than
+    /// the application's capture limit are rejected before they can cause an
+    /// unbounded ReadLine allocation.
+    /// </summary>
+    public ClipStoreSnapshot ReadSnapshot(int tailCount)
+    {
+        if (tailCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(tailCount));
+        }
+
         lock (_lock)
         {
             if (!File.Exists(_filePath))
             {
-                return Array.Empty<string>();
+                return new ClipStoreSnapshot(0, Array.Empty<string>());
             }
 
             var info = new FileInfo(_filePath);
             if (info.Length == 0)
             {
-                return Array.Empty<string>();
+                return new ClipStoreSnapshot(0, Array.Empty<string>());
             }
 
-            // Stream the whole file while retaining only the requested tail. A fixed
-            // byte window loses valid entries when a few legal 256K clips exceed it;
-            // startup already scans the full file for CountNonEmptyLines, so this keeps
-            // bounded memory without introducing a new asymptotic I/O cost.
-            var lines = new Queue<string>(Math.Min(n, 1024));
-            using (var stream = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            using (var reader = new StreamReader(stream, Utf8NoBom, detectEncodingFromByteOrderMarks: true))
+            var tail = new Queue<string>(Math.Min(tailCount, 1024));
+            var line = new StringBuilder(Math.Min(MaxStoredLineChars, 4096));
+            var buffer = new char[8192];
+            var totalCount = 0;
+            var lineLength = 0;
+            var lineHasContent = false;
+            var previousWasCarriageReturn = false;
+
+            void FinishLine()
             {
-                while (!reader.EndOfStream)
+                if (lineHasContent)
                 {
-                    var line = reader.ReadLine();
-                    if (string.IsNullOrWhiteSpace(line))
+                    totalCount = checked(totalCount + 1);
+                    if (tailCount > 0)
                     {
+                        if (tail.Count == tailCount)
+                        {
+                            tail.Dequeue();
+                        }
+
+                        tail.Enqueue(line.ToString());
+                    }
+                }
+
+                line.Clear();
+                lineLength = 0;
+                lineHasContent = false;
+            }
+
+            using var stream = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            var fileEncoding = DetectEncoding(stream);
+            stream.Position = fileEncoding.PreambleLength;
+            using var reader = new StreamReader(
+                stream,
+                fileEncoding.ReadEncoding,
+                detectEncodingFromByteOrderMarks: false);
+            int charsRead;
+            while ((charsRead = reader.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                for (var index = 0; index < charsRead; index++)
+                {
+                    var ch = buffer[index];
+                    if (ch == '\n')
+                    {
+                        if (!previousWasCarriageReturn)
+                        {
+                            FinishLine();
+                        }
+
+                        previousWasCarriageReturn = false;
                         continue;
                     }
 
-                    if (lines.Count == n)
+                    if (ch == '\r')
                     {
-                        lines.Dequeue();
+                        FinishLine();
+                        previousWasCarriageReturn = true;
+                        continue;
                     }
 
-                    lines.Enqueue(line);
+                    previousWasCarriageReturn = false;
+                    lineLength++;
+                    if (lineLength > MaxStoredLineChars)
+                    {
+                        throw new InvalidDataException(
+                            $"The journal contains a line longer than {MaxStoredLineChars} characters.");
+                    }
+
+                    line.Append(ch);
+                    lineHasContent |= !char.IsWhiteSpace(ch);
                 }
             }
 
-            return lines.ToList();
+            if (lineLength > 0)
+            {
+                FinishLine();
+            }
+
+            return new ClipStoreSnapshot(totalCount, tail.ToList());
         }
     }
 
@@ -215,28 +295,106 @@ public sealed class ClipStore
     /// Counts non-empty lines in the current file (for continuing sequence numbers).
     /// </summary>
     public int CountNonEmptyLines()
+        => ReadSnapshot(tailCount: 0).TotalCount;
+
+    private static FileEncoding DetectEncoding(FileStream stream)
     {
-        lock (_lock)
+        if (stream.Length == 0)
         {
-            if (!File.Exists(_filePath))
-            {
-                return 0;
-            }
-
-            var count = 0;
-            using var stream = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using var reader = new StreamReader(stream, Utf8NoBom, detectEncodingFromByteOrderMarks: true);
-            while (!reader.EndOfStream)
-            {
-                var line = reader.ReadLine();
-                if (!string.IsNullOrWhiteSpace(line))
-                {
-                    count++;
-                }
-            }
-
-            return count;
+            return new FileEncoding(
+                Utf8NoBom,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true),
+                PreambleLength: 0,
+                CodeUnitWidth: 1);
         }
+
+        var originalPosition = stream.Position;
+        stream.Position = 0;
+        Span<byte> header = stackalloc byte[4];
+        var read = stream.Read(header);
+        stream.Position = originalPosition;
+
+        if (read >= 4 &&
+            header[0] == 0x00 && header[1] == 0x00 &&
+            header[2] == 0xFE && header[3] == 0xFF)
+        {
+            return new FileEncoding(
+                new UTF32Encoding(bigEndian: true, byteOrderMark: true),
+                new UTF32Encoding(bigEndian: true, byteOrderMark: false, throwOnInvalidCharacters: true),
+                PreambleLength: 4,
+                CodeUnitWidth: 4);
+        }
+
+        if (read >= 4 &&
+            header[0] == 0xFF && header[1] == 0xFE &&
+            header[2] == 0x00 && header[3] == 0x00)
+        {
+            return new FileEncoding(
+                Encoding.UTF32,
+                new UTF32Encoding(bigEndian: false, byteOrderMark: false, throwOnInvalidCharacters: true),
+                PreambleLength: 4,
+                CodeUnitWidth: 4);
+        }
+
+        if (read >= 3 &&
+            header[0] == 0xEF && header[1] == 0xBB && header[2] == 0xBF)
+        {
+            return new FileEncoding(
+                Encoding.UTF8,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true),
+                PreambleLength: 3,
+                CodeUnitWidth: 1);
+        }
+
+        if (read >= 2 && header[0] == 0xFF && header[1] == 0xFE)
+        {
+            return new FileEncoding(
+                Encoding.Unicode,
+                new UnicodeEncoding(bigEndian: false, byteOrderMark: false, throwOnInvalidBytes: true),
+                PreambleLength: 2,
+                CodeUnitWidth: 2);
+        }
+
+        if (read >= 2 && header[0] == 0xFE && header[1] == 0xFF)
+        {
+            return new FileEncoding(
+                Encoding.BigEndianUnicode,
+                new UnicodeEncoding(bigEndian: true, byteOrderMark: false, throwOnInvalidBytes: true),
+                PreambleLength: 2,
+                CodeUnitWidth: 2);
+        }
+
+        return new FileEncoding(
+            Utf8NoBom,
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true),
+            PreambleLength: 0,
+            CodeUnitWidth: 1);
+    }
+
+    private static bool HasContentWithoutFinalLineBreak(
+        FileStream stream,
+        FileEncoding fileEncoding)
+    {
+        if (stream.Length <= fileEncoding.PreambleLength)
+        {
+            return false;
+        }
+
+        if (stream.Length < fileEncoding.CodeUnitWidth)
+        {
+            return true;
+        }
+
+        var tail = new byte[fileEncoding.CodeUnitWidth];
+        stream.Position = stream.Length - tail.Length;
+        stream.ReadExactly(tail);
+        if (fileEncoding.CodeUnitWidth == 1)
+        {
+            return tail[0] is not (0x0D or 0x0A);
+        }
+
+        var finalText = fileEncoding.ReadEncoding.GetString(tail);
+        return finalText.Length == 0 || finalText[^1] is not ('\r' or '\n');
     }
 
 }
