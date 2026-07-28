@@ -145,6 +145,10 @@ public static class Localization
             ? "settings.json 已损坏，已恢复为默认设置。原文件已尝试备份为 settings.json.broken。"
             : "settings.json was unreadable and has been reset to defaults. The original was attempted to be backed up as settings.json.broken.";
 
+    public static string SettingsReadFailed => IsChinese
+        ? "无法读取 settings.json。该文件可能正被占用或当前账户没有读取权限；为避免覆盖有效设置，ClipJournal 将退出。"
+        : "Could not read settings.json. It may be in use or inaccessible; ClipJournal will exit rather than overwrite valid settings.";
+
     public static string StoragePathAdjusted(string path) => IsChinese
         ? "原保存路径无效或不可用，已改用以下本地 txt：\n" + path
         : "The configured save path was invalid or unavailable. This local text file will be used instead:\n" + path;

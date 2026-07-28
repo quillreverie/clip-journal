@@ -59,6 +59,7 @@ public sealed class ClipStore
         }
 
         var full = Path.GetFullPath(path);
+        EnsureLocalOrdinaryPath(full);
         if (!string.Equals(Path.GetExtension(full), ".txt", StringComparison.OrdinalIgnoreCase))
         {
             throw new ArgumentException("The journal path must use the .txt extension.", nameof(path));
@@ -73,9 +74,52 @@ public sealed class ClipStore
         if (!string.IsNullOrEmpty(dir))
         {
             Directory.CreateDirectory(dir);
+            EnsureLocalOrdinaryPath(full);
         }
 
         return full;
+    }
+
+    private static void EnsureLocalOrdinaryPath(string fullPath)
+    {
+        // The privacy promise is for local storage. Reject UNC/device paths, mapped
+        // network drives, and existing symbolic-link/junction components rather than
+        // silently following a .txt-looking path to a remote or unrelated target.
+        if (fullPath.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The journal path must be on a local drive.", nameof(fullPath));
+        }
+
+        var root = Path.GetPathRoot(fullPath);
+        if (string.IsNullOrEmpty(root))
+        {
+            throw new ArgumentException("The journal path must be absolute.", nameof(fullPath));
+        }
+
+        if (new DriveInfo(root).DriveType == DriveType.Network)
+        {
+            throw new ArgumentException("The journal path must be on a local drive.", nameof(fullPath));
+        }
+
+        var current = root;
+        var relativeParts = Path.GetRelativePath(root, fullPath).Split(
+            new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+            StringSplitOptions.RemoveEmptyEntries);
+        foreach (var part in relativeParts)
+        {
+            current = Path.Combine(current, part);
+            if (!File.Exists(current) && !Directory.Exists(current))
+            {
+                continue;
+            }
+
+            if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new ArgumentException(
+                    "The journal path cannot pass through a symbolic link or junction.",
+                    nameof(fullPath));
+            }
+        }
     }
 
     /// <summary>
@@ -96,7 +140,7 @@ public sealed class ClipStore
 
     public void AppendLine(string singleLine)
     {
-        ArgumentNullException.ThrowIfNull(singleLine);
+        ValidateContentLine(singleLine);
         AppendCore(singleLine, trailingBlankLine: false);
     }
 
@@ -113,8 +157,24 @@ public sealed class ClipStore
     /// </summary>
     public void AppendLine(string singleLine, bool alsoBlankLine)
     {
-        ArgumentNullException.ThrowIfNull(singleLine);
+        ValidateContentLine(singleLine);
         AppendCore(singleLine, alsoBlankLine);
+    }
+
+    private static void ValidateContentLine(string singleLine)
+    {
+        ArgumentNullException.ThrowIfNull(singleLine);
+        if (singleLine.Length > MaxStoredLineChars)
+        {
+            throw new ArgumentException(
+                $"A journal line cannot exceed {MaxStoredLineChars} characters.",
+                nameof(singleLine));
+        }
+
+        if (singleLine.AsSpan().IndexOfAny('\r', '\n') >= 0)
+        {
+            throw new ArgumentException("A journal entry must be a single line.", nameof(singleLine));
+        }
     }
 
     private void AppendCore(string? contentLine, bool trailingBlankLine)
@@ -393,8 +453,13 @@ public sealed class ClipStore
             return tail[0] is not (0x0D or 0x0A);
         }
 
-        var finalText = fileEncoding.ReadEncoding.GetString(tail);
-        return finalText.Length == 0 || finalText[^1] is not ('\r' or '\n');
+        // Compare encoded code units instead of decoding the last unit. In UTF-16,
+        // the final unit may be the low surrogate of a valid supplementary character;
+        // decoding it in isolation with strict fallback would incorrectly throw.
+        var carriageReturn = fileEncoding.ReadEncoding.GetBytes("\r");
+        var lineFeed = fileEncoding.ReadEncoding.GetBytes("\n");
+        return !tail.AsSpan().SequenceEqual(carriageReturn) &&
+               !tail.AsSpan().SequenceEqual(lineFeed);
     }
 
 }

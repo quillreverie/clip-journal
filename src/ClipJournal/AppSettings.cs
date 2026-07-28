@@ -4,6 +4,8 @@ namespace ClipJournal;
 
 public sealed class AppSettings
 {
+    internal const long MaxSettingsBytes = 1024 * 1024;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -11,7 +13,8 @@ public sealed class AppSettings
 
     /// <summary>Bytes written/read with the same encoder so hand-edited files
     /// (e.g. notepad saving with BOM) don't drift across saves.</summary>
-    private static readonly System.Text.Encoding Utf8NoBom = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+    private static readonly System.Text.Encoding Utf8NoBom =
+        new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     public string ClipsFilePath { get; set; } = DefaultClipsPath;
 
@@ -47,16 +50,33 @@ public sealed class AppSettings
     /// silently disappearing.
     /// </summary>
     public static AppSettings Load(out string? warning)
+        => LoadFromPath(SettingsPath, out warning);
+
+    internal static AppSettings LoadFromPath(string settingsPath, out string? warning)
     {
         warning = null;
         try
         {
-            if (!File.Exists(SettingsPath))
+            if (!File.Exists(settingsPath))
             {
                 return new AppSettings();
             }
 
-            var json = File.ReadAllText(SettingsPath, Utf8NoBom);
+            using var stream = new FileStream(
+                settingsPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read);
+            if (stream.Length > MaxSettingsBytes)
+            {
+                throw new JsonException("The settings file exceeds the supported size.");
+            }
+
+            using var reader = new StreamReader(
+                stream,
+                Utf8NoBom,
+                detectEncodingFromByteOrderMarks: true);
+            var json = reader.ReadToEnd();
             var loaded = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions);
             if (loaded is null)
             {
@@ -91,15 +111,16 @@ public sealed class AppSettings
 
             return loaded;
         }
-        catch (Exception)
+        catch (Exception exception) when (
+            exception is JsonException or System.Text.DecoderFallbackException)
         {
-            // Preserve the broken file so the user can recover it, then fall back
-            // to defaults. Without a backup the original settings are lost forever.
+            // Only malformed content is quarantined. I/O and permission failures are
+            // transient/environmental and must not replace valid settings with defaults.
             try
             {
-                if (File.Exists(SettingsPath))
+                if (File.Exists(settingsPath))
                 {
-                    File.Move(SettingsPath, SettingsPath + ".broken", overwrite: true);
+                    File.Move(settingsPath, settingsPath + ".broken", overwrite: true);
                 }
             }
             catch

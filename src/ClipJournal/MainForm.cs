@@ -44,7 +44,6 @@ public sealed class MainForm : Form
     private string? _lastLine;
     private int _totalCount;
     private int _nextIndex = 1;
-    private uint? _suppressedClipboardSequence;
     private readonly string? _startupWarning;
 
     public MainForm(AppSettings settings, ClipStore store, string? startupWarning = null)
@@ -406,10 +405,15 @@ public sealed class MainForm : Form
         if (!ClipboardReader.TryReadUnicodeText(
                 MaxLineChars,
                 out var text,
-                out var sequence,
+                out var internalCopy,
                 out var readerTruncated))
         {
             ShowToast(Localization.ClipboardReadFailed, isError: true);
+            return;
+        }
+
+        if (internalCopy)
+        {
             return;
         }
 
@@ -423,19 +427,6 @@ public sealed class MainForm : Form
         if (TextNormalizer.IsIgnorable(line))
         {
             return;
-        }
-
-        // WM_CLIPBOARDUPDATE can be delivered more than once for our SetText. Suppress
-        // only notifications for that exact clipboard generation; a later external copy
-        // of identical text has a new sequence number and must be captured normally.
-        if (_suppressedClipboardSequence is uint suppressedSequence)
-        {
-            if (sequence == suppressedSequence)
-            {
-                return;
-            }
-
-            _suppressedClipboardSequence = null;
         }
 
         if (string.Equals(line, _lastLine, StringComparison.Ordinal))
@@ -460,6 +451,10 @@ public sealed class MainForm : Form
         catch (Exception)
         {
             _storageWritable = false;
+            // The append may have reached disk before a flush error was reported.
+            // Reload before resuming so numbering and duplicate detection cannot
+            // continue from an uncertain in-memory snapshot.
+            _historyReady = false;
             _listening = false;
             UpdateStatusUI();
             if (!IsDisposed)
@@ -496,14 +491,14 @@ public sealed class MainForm : Form
     {
         try
         {
-            Clipboard.SetText(e.Item.Content);
-            var sequence = ClipboardReader.GetCurrentSequenceNumber();
-            _suppressedClipboardSequence = sequence == 0 ? null : sequence;
+            var data = new DataObject();
+            data.SetData(DataFormats.UnicodeText, e.Item.Content);
+            data.SetData(ClipboardReader.InternalCopyFormat, "1");
+            Clipboard.SetDataObject(data, copy: true);
             ShowToast(Localization.CopySuccess);
         }
         catch (Exception)
         {
-            _suppressedClipboardSequence = null;
             ShowToast(Localization.CopyFailedHint, isError: true);
         }
     }
@@ -513,6 +508,9 @@ public sealed class MainForm : Form
         if (_listening)
         {
             _listening = false;
+            // The journal can be edited through the app's "Open file" action while
+            // capture is paused. Resume must reconcile any external changes first.
+            _historyReady = false;
             UpdateStatusUI();
             ShowToast(Localization.Paused);
             return;
@@ -754,6 +752,9 @@ public sealed class MainForm : Form
         catch (Exception)
         {
             _storageWritable = false;
+            // Clearing can fail after changing the file. Treat the cached history as
+            // uncertain and rebuild it on the next successful resume.
+            _historyReady = false;
             _listening = false;
             UpdateStatusUI();
             ModernDialog.ShowError(this, Localization.ClearFailedHint);

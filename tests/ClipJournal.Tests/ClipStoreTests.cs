@@ -182,6 +182,45 @@ public class ClipStoreTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AppendLine_handles_utf16_surrogate_pair_at_unterminated_end(bool bigEndian)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cj-" + Guid.NewGuid() + ".txt");
+        var encoding = new UnicodeEncoding(bigEndian, byteOrderMark: true, throwOnInvalidBytes: true);
+        try
+        {
+            File.WriteAllText(path, "😀", encoding);
+            var store = new ClipStore(path);
+
+            store.AppendLine("new");
+
+            Assert.Equal(
+                "😀" + Environment.NewLine + "new" + Environment.NewLine,
+                File.ReadAllText(path, encoding));
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
+    [Fact]
+    public void AppendLine_rejects_multiline_and_oversized_content()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cj-" + Guid.NewGuid() + ".txt");
+        var store = new ClipStore(path);
+
+        Assert.Throws<ArgumentException>(() => store.AppendLine("one\ntwo"));
+        Assert.Throws<ArgumentException>(
+            () => store.AppendLine(new string('x', ClipStore.MaxStoredLineChars + 1)));
+        Assert.False(File.Exists(path));
+    }
+
     [Fact]
     public void ReadTailLines_returns_all_requested_large_lines()
     {
@@ -219,6 +258,13 @@ public class ClipStoreTests
     {
         var path = Path.Combine(Path.GetTempPath(), "cj-" + Guid.NewGuid() + ".json");
         Assert.Throws<ArgumentException>(() => new ClipStore(path));
+    }
+
+    [Fact]
+    public void Constructor_rejects_unc_path()
+    {
+        Assert.Throws<ArgumentException>(
+            () => new ClipStore(@"\\example.invalid\share\clips.txt"));
     }
 
     [Fact]

@@ -23,7 +23,21 @@ internal static class Program
             return;
         }
 
-        var settings = AppSettings.Load(out var settingsWarning);
+        AppSettings settings;
+        string? settingsWarning;
+        try
+        {
+            settings = AppSettings.Load(out settingsWarning);
+        }
+        catch (Exception)
+        {
+            // Do not continue with defaults when a valid settings file is merely
+            // locked or inaccessible: doing so can split future clips into a
+            // different journal and later overwrite the original configuration.
+            ModernDialog.ShowError(owner: null, Localization.SettingsReadFailed);
+            return;
+        }
+
         if (!TryCreateStore(settings, out var store, out var pathChanged))
         {
             ModernDialog.ShowError(owner: null, Localization.StorageUnavailable);
@@ -58,7 +72,8 @@ internal static class Program
             }
         }
 
-        Application.Run(new MainForm(settings, store!, settingsWarning));
+        using var mainForm = new MainForm(settings, store!, settingsWarning);
+        Application.Run(mainForm);
     }
 
     private static bool TryCreateStore(
@@ -71,27 +86,31 @@ internal static class Program
         var configuredPath = settings.ClipsFilePath;
         var candidates = new[]
         {
-            configuredPath,
-            AppSettings.DefaultClipsPath,
-            Path.Combine(Path.GetTempPath(), "ClipJournal", "clips.txt"),
+            (Path: configuredPath, MustBeWritable: false),
+            (Path: AppSettings.DefaultClipsPath, MustBeWritable: true),
+            (Path: Path.Combine(Path.GetTempPath(), "ClipJournal", "clips.txt"), MustBeWritable: true),
         };
         var attempted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var candidate in candidates)
         {
-            if (!attempted.Add(candidate))
+            if (!attempted.Add(candidate.Path))
             {
                 continue;
             }
 
             try
             {
-                store = new ClipStore(candidate);
-                // A valid path is not necessarily usable (readonly file, ACL, or a
-                // long-lived exclusive lock). Probe inside the candidate loop so the
-                // fallback actually selects a writable target before privacy consent
-                // and before the resolved path is persisted.
-                store.EnsureWritable();
+                store = new ClipStore(candidate.Path);
+                if (candidate.MustBeWritable)
+                {
+                    // Fallbacks must be proven usable. The configured path is kept
+                    // when syntactically valid even if it is temporarily locked;
+                    // MainForm then starts paused and lets Resume retry, avoiding a
+                    // permanent and surprising migration after a momentary lock.
+                    store.EnsureWritable();
+                }
+
                 settings.ClipsFilePath = store.FilePath;
                 pathChanged = !string.Equals(
                     configuredPath,

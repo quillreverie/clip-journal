@@ -4,11 +4,12 @@ namespace ClipJournal;
 
 public static class ClipboardReader
 {
+    public const string InternalCopyFormat = "ClipJournal.InternalCopy.v1";
+
     private const uint CfUnicodeText = 13;
     private const int MaxRetries = 5;
     private const int RetryDelayMs = 20;
-
-    public static uint GetCurrentSequenceNumber() => GetClipboardSequenceNumber();
+    private static readonly uint InternalCopyFormatId = RegisterClipboardFormat(InternalCopyFormat);
 
     /// <summary>
     /// Tries to read Unicode text from the clipboard.
@@ -18,7 +19,7 @@ public static class ClipboardReader
     public static bool TryReadUnicodeText(
         int maxChars,
         out string? text,
-        out uint sequence,
+        out bool internalCopy,
         out bool truncated)
     {
         if (maxChars <= 0 || maxChars == int.MaxValue)
@@ -27,7 +28,7 @@ public static class ClipboardReader
         }
 
         text = null;
-        sequence = 0;
+        internalCopy = false;
         truncated = false;
 
         for (var attempt = 0; attempt < MaxRetries; attempt++)
@@ -51,9 +52,15 @@ public static class ClipboardReader
                 // wrongly discard every valid snapshot.
                 var seqBefore = GetClipboardSequenceNumber();
 
+                if (InternalCopyFormatId != 0 &&
+                    IsClipboardFormatAvailable(InternalCopyFormatId))
+                {
+                    internalCopy = true;
+                    return true;
+                }
+
                 if (!IsClipboardFormatAvailable(CfUnicodeText))
                 {
-                    sequence = GetClipboardSequenceNumber();
                     return true;
                 }
 
@@ -109,7 +116,6 @@ public static class ClipboardReader
                         truncated = true;
                     }
 
-                    sequence = seqAfter;
                     text = value;
                     return true;
                 }
@@ -141,6 +147,9 @@ public static class ClipboardReader
 
     [DllImport("user32.dll")]
     private static extern uint GetClipboardSequenceNumber();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint RegisterClipboardFormat(string lpszFormat);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr GlobalLock(IntPtr hMem);
